@@ -70,7 +70,16 @@ jobs:
           Copy-Item updates/github_repo.json "$stage/updates/" -Force
           Copy-Item updates/КАК_УСТАНОВИТЬ.txt $stage -Force
 
-          Compress-Archive -Path "$stage/*" -DestinationPath "updates/packages/$zip" -Force
+          $updateStage = "dist/update_package"
+          if (Test-Path $updateStage) { Remove-Item -Recurse -Force $updateStage }
+          New-Item -ItemType Directory -Force -Path $updateStage | Out-Null
+          New-Item -ItemType Directory -Force -Path "$updateStage/updates" | Out-Null
+          Copy-Item dist/LegendaRubezha/* $updateStage -Recurse -Force
+          Copy-Item updates/launcher_config.json $updateStage -Force
+          Copy-Item updates/manifest.json "$updateStage/updates/" -Force
+          Copy-Item updates/github_repo.json "$updateStage/updates/" -Force
+
+          Compress-Archive -Path "$updateStage/*" -DestinationPath "updates/packages/$zip" -Force
           Compress-Archive -Path "$stage/*" -DestinationPath "updates/packages/$friendZip" -Force
           echo "friend_zip=$friendZip" >> $env:GITHUB_OUTPUT
 

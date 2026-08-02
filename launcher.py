@@ -193,7 +193,58 @@ def download_file(url: str, dest: Path, progress_cb, timeout: int) -> None:
                     progress_cb(None)
 
 
-def apply_update_zip(zip_path: Path, target_dir: Path, progress_cb) -> None:
+PENDING_UPDATE_DIR = "_pending_update"
+SKIP_UPDATE_PREFIXES = ("Launcher/",)
+
+
+def is_game_running(exe_name: str = "LegendaRubezha.exe") -> bool:
+    if sys.platform != "win32":
+        return False
+    try:
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        result = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {exe_name}", "/NH"],
+            capture_output=True,
+            text=True,
+            creationflags=flags,
+        )
+        return exe_name.lower() in (result.stdout or "").lower()
+    except OSError:
+        return False
+
+
+def apply_pending_updates(target_dir: Path) -> int:
+    pending = target_dir / PENDING_UPDATE_DIR
+    if not pending.is_dir():
+        return 0
+    applied = 0
+    for src in sorted(pending.rglob("*")):
+        if not src.is_file():
+            continue
+        rel = src.relative_to(pending)
+        dest = target_dir / rel
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+            src.unlink()
+            applied += 1
+        except OSError:
+            continue
+    for path in sorted(pending.rglob("*"), reverse=True):
+        if path.is_dir():
+            try:
+                path.rmdir()
+            except OSError:
+                pass
+    try:
+        pending.rmdir()
+    except OSError:
+        pass
+    return applied
+
+
+def apply_update_zip(zip_path: Path, target_dir: Path, progress_cb) -> list[str]:
+    deferred = []
     with tempfile.TemporaryDirectory(prefix="lr_update_") as tmp:
         tmp_path = Path(tmp)
         with zipfile.ZipFile(zip_path, "r") as archive:
@@ -201,15 +252,29 @@ def apply_update_zip(zip_path: Path, target_dir: Path, progress_cb) -> None:
 
         roots = [p for p in tmp_path.iterdir() if p.is_dir()]
         source_root = roots[0] if len(roots) == 1 else tmp_path
+        pending_root = target_dir / PENDING_UPDATE_DIR
 
         files = [p for p in source_root.rglob("*") if p.is_file()]
         total = max(1, len(files))
         for index, src in enumerate(files, start=1):
             rel = src.relative_to(source_root)
+            rel_posix = rel.as_posix()
+            if rel_posix.startswith(SKIP_UPDATE_PREFIXES):
+                continue
             dest = target_dir / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest)
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dest)
+            except (PermissionError, OSError) as exc:
+                winerr = getattr(exc, "winerror", None)
+                if winerr not in (13, 32) and not isinstance(exc, PermissionError):
+                    raise
+                pending_dest = pending_root / rel
+                pending_dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, pending_dest)
+                deferred.append(rel_posix)
             progress_cb(index / total)
+    return deferred
 
 
 class LauncherApp:
@@ -232,6 +297,9 @@ class LauncherApp:
         self._busy = False
 
         self._build_ui()
+        pending = apply_pending_updates(self.base)
+        if pending:
+            self._pending_applied = pending
         if self.config.get("auto_check_updates", True):
             self.root.after(400, self.check_updates)
 
@@ -496,11 +564,20 @@ class LauncherApp:
             "Игра будет обновлена. Сохранения (save.json) не удаляются.",
         ):
             return
+        game_exe = self.config.get("game_exe", "LegendaRubezha.exe")
+        if is_game_running(game_exe):
+            messagebox.showwarning(
+                GAME_TITLE,
+                f"Сначала закрой игру ({game_exe}).\n"
+                "Иначе файлы будут заняты и обновление не установится.",
+            )
+            return
         self._set_busy(True, progress_visible=True)
         self._set_status("Загружаем обновление…", COLORS["accent2"])
 
         def worker():
             error = None
+            notice = None
             try:
                 timeout = int(self.config.get("check_timeout_sec", 12))
                 manifest_url = resolve_manifest_url(self.config, self.base)
@@ -541,7 +618,9 @@ class LauncherApp:
                     def install_progress(ratio):
                         self.root.after(0, lambda: self.progress.configure(value=45 + ratio * 55))
 
-                    apply_update_zip(zip_path, self.base, install_progress)
+                    deferred = apply_update_zip(zip_path, self.base, install_progress)
+                    if deferred:
+                        apply_pending_updates(self.base)
 
                     self.local_version = {
                         "version": latest.get("version", self.local_version.get("version")),
@@ -550,14 +629,19 @@ class LauncherApp:
                     }
                     write_json(self.version_path, self.local_version)
                     self.latest = latest
+                    if deferred:
+                        notice = (
+                            "Часть файлов была занята. Закрой LegendaRubezha.exe "
+                            "и перезапусти лаунчер — обновление завершится автоматически."
+                        )
             except Exception as exc:
                 error = str(exc)
 
-            self.root.after(0, lambda: self._on_update_finished(error))
+            self.root.after(0, lambda: self._on_update_finished(error, notice))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _on_update_finished(self, error):
+    def _on_update_finished(self, error, notice=None):
         self._set_busy(False)
         if error:
             self._set_status("Ошибка обновления", COLORS["danger"])
@@ -568,7 +652,10 @@ class LauncherApp:
         self.progress["value"] = 100
         self.version_label.configure(text=self._version_text())
         self._set_status("Обновление установлено!", COLORS["ok"])
-        messagebox.showinfo(GAME_TITLE, "Игра успешно обновлена. Приятной игры!")
+        if notice:
+            messagebox.showinfo(GAME_TITLE, notice)
+        else:
+            messagebox.showinfo(GAME_TITLE, "Игра успешно обновлена. Приятной игры!")
         self.check_updates()
 
     def launch_game(self):

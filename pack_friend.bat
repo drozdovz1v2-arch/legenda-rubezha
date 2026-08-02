@@ -2,7 +2,7 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 
-set "VER=0.0.0.3"
+set "VER=0.0.0.4"
 set "STAGE=dist\friend_package"
 set "OUT=updates\packages\LegendaRubezha_FriendSetup_%VER%.zip"
 

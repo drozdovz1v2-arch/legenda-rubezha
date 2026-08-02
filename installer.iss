@@ -4,9 +4,9 @@
 
 #define MyAppName "Легенда Рубежа"
 
-#define MyAppVersion "0.0.0.3"
+#define MyAppVersion "0.0.0.4"
 
-#define MyAppVersionName "beta 0.0.0.3"
+#define MyAppVersionName "beta 0.0.0.4"
 
 #define MyAppPublisher "Legenda Rubezha"
 
@@ -40,7 +40,7 @@ DisableProgramGroupPage=yes
 
 OutputDir=installer
 
-OutputBaseFilename=LegendaRubezha_Setup_beta_0.0.0.3
+OutputBaseFilename=LegendaRubezha_Setup_beta_0.0.0.4
 
 SetupIconFile=compiler:SetupClassicIcon.ico
 
