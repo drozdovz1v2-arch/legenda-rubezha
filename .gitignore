@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+.venv/
+venv/
+
+# Сборка
+build/
+dist/
+*.spec.bak
+
+# Игра / лаунчер (локальные артефакты)
+installer/*.exe
+updates/packages/*.zip
+save.json
+crash_log.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Секреты (если появятся)
+.env
+*.pem

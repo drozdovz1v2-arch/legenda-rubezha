@@ -1,0 +1,18 @@
+Audio assets (CC0 / public domain)
+
+SFX — Kenney.nl "RPG Audio" pack (via OpenGameArt.org) or процедурный синтез (audio_synth.py)
+  sword_swing.ogg   — свист взмаха (синтез по умолчанию)
+  sword_hit.ogg     <- knifeSlice2.ogg или синтез
+  enemy_death.ogg <- chop.ogg
+  coin.ogg        <- handleCoins2.ogg
+  potion_pickup.ogg — восходящие ноты при подборе (синтез по умолчанию)
+  potion_drink.ogg  — глоток + исцеление (синтез по умолчанию)
+  potion.ogg      <- legacy alias pickup
+  level_up.ogg    <- metalClick.ogg
+
+Music
+  music/forest.ogg — Kothari Forest Glade Area (OpenGameArt, CC0)
+  music/desert.mp3 — Desert Loop Lo-Fi Remaster by iamoneabe (OpenGameArt, CC0)
+  music/menu.ogg   — House In a Forest Loop by HorrorPen (OpenGameArt, CC-BY 3.0)
+
+Optional credit: Kenney.nl, OpenGameArt.org

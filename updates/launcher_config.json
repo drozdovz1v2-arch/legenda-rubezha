@@ -1,0 +1,7 @@
+{
+  "manifest_url": "https://raw.githubusercontent.com/drozdovzhv2-arch/legenda-rubezha/main/updates/manifest.json",
+  "fallback_manifest": "./updates/manifest.json",
+  "game_exe": "LegendaRubezha.exe",
+  "auto_check_updates": true,
+  "check_timeout_sec": 12
+}
