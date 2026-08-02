@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -109,6 +110,8 @@ def resolve_manifest_url(config: dict, base: Path) -> str:
 
 def resolve_url(url: str, base: Path) -> str:
     url = (url or "").strip()
+    if url.startswith(("http://", "https://")):
+        return url
     if url.startswith("file:"):
         return str(Path(url[5:]).expanduser().resolve())
     path = Path(url)
@@ -119,8 +122,22 @@ def resolve_url(url: str, base: Path) -> str:
     return url
 
 
-def fetch_manifest(url: str, base: Path, timeout: int) -> dict:
+def fetch_manifest(url: str, base: Path, timeout: int, cache_bust: bool = False) -> dict:
     target = resolve_url(url, base)
+    if target.startswith(("http://", "https://")):
+        fetch_url = target
+        if cache_bust:
+            sep = "&" if "?" in fetch_url else "?"
+            fetch_url = f"{fetch_url}{sep}t={int(time.time())}"
+        request = urllib.request.Request(
+            fetch_url,
+            headers={
+                "User-Agent": "LegendaRubezhaLauncher/1.0",
+                "Cache-Control": "no-cache",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
     if os.path.isfile(target):
         with open(target, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -394,6 +411,7 @@ class LauncherApp:
                     manifest_url,
                     self.base,
                     int(self.config.get("check_timeout_sec", 12)),
+                    cache_bust=True,
                 )
             except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
                 error = str(exc)
@@ -484,10 +502,21 @@ class LauncherApp:
         def worker():
             error = None
             try:
+                timeout = int(self.config.get("check_timeout_sec", 12))
+                manifest_url = resolve_manifest_url(self.config, self.base)
+                try:
+                    fresh = fetch_manifest(manifest_url, self.base, timeout, cache_bust=True)
+                    latest = fresh.get("latest") or self.latest
+                except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+                    latest = self.latest
+
+                url = (latest.get("download_url") or "").strip()
+                if not url:
+                    raise ValueError("Ссылка на загрузку не указана в manifest.json.")
+
                 with tempfile.TemporaryDirectory(prefix="lr_dl_") as tmp:
                     tmp_path = Path(tmp)
                     zip_path = tmp_path / "update.zip"
-                    timeout = int(self.config.get("check_timeout_sec", 12))
 
                     def dl_progress(ratio):
                         if ratio is None:
@@ -496,11 +525,16 @@ class LauncherApp:
 
                     download_file(url, zip_path, dl_progress, timeout)
 
-                    expected = (self.latest.get("sha256") or "").strip().lower()
+                    expected = (latest.get("sha256") or "").strip().lower()
                     if expected:
                         actual = sha256_file(zip_path).lower()
                         if actual != expected:
-                            raise ValueError("Контрольная сумма файла не совпадает.")
+                            raise ValueError(
+                                "Контрольная сумма файла не совпадает.\n"
+                                "Нажмите «Проверить обновления» и попробуйте снова.\n"
+                                f"Ожидалось: {expected[:16]}…\n"
+                                f"Получено:  {actual[:16]}…"
+                            )
 
                     self.root.after(0, lambda: self._set_status("Устанавливаем…", COLORS["accent2"]))
 
@@ -510,11 +544,12 @@ class LauncherApp:
                     apply_update_zip(zip_path, self.base, install_progress)
 
                     self.local_version = {
-                        "version": self.latest.get("version", self.local_version.get("version")),
-                        "version_name": self.latest.get("version_name", ""),
+                        "version": latest.get("version", self.local_version.get("version")),
+                        "version_name": latest.get("version_name", ""),
                         "installed_date": date.today().isoformat(),
                     }
                     write_json(self.version_path, self.local_version)
+                    self.latest = latest
             except Exception as exc:
                 error = str(exc)
 
