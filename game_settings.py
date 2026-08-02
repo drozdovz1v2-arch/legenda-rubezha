@@ -20,6 +20,7 @@ DEFAULT_DAY_SPEED = 1.0
 DEFAULT_ENEMY_PUSH = True
 DEFAULT_SHOW_HINTS = True
 DEFAULT_BRIGHTNESS = 1.0
+DEFAULT_AUTO_RESOLUTION = True
 
 FPS_OPTIONS = [30, 60, 120, 0]
 DAY_SPEED_OPTIONS = [0.5, 1.0, 1.5, 2.0]
@@ -138,6 +139,60 @@ def format_resolution_label(width, height, desktop_size=None):
         label += " (экран)"
     return label
 
+
+def get_desktop_size():
+    """Текущее разрешение рабочего стола (или окна до полного экрана)."""
+    import pygame
+
+    info = pygame.display.Info()
+    return max(640, int(info.current_w)), max(480, int(info.current_h))
+
+
+def fit_resolution(width, height, desktop_w, desktop_h):
+    """Уменьшает разрешение, чтобы оно целиком помещалось на экран."""
+    w, h = int(width), int(height)
+    if w <= desktop_w and h <= desktop_h:
+        return w, h
+    scale = min(desktop_w / max(1, w), desktop_h / max(1, h))
+    return max(640, int(w * scale)), max(480, int(h * scale))
+
+
+def pick_best_resolution_index(
+    resolutions,
+    desktop_w,
+    desktop_h,
+    prefer_w=None,
+    prefer_h=None,
+):
+    """Подбирает лучшее разрешение под монитор игрока."""
+    if not resolutions:
+        return 0
+
+    desktop_ar = desktop_w / max(1, desktop_h)
+    best_i = 0
+    best_score = -1e18
+    for i, (w, h) in enumerate(resolutions):
+        fw, fh = fit_resolution(w, h, desktop_w, desktop_h)
+        if fw < 640 or fh < 480:
+            continue
+        ar = fw / max(1, fh)
+        ar_penalty = abs(ar - desktop_ar) * 1_000_000
+        area = fw * fh
+        match_bonus = 0
+        if prefer_w and prefer_h:
+            match_bonus = (
+                500_000_000
+                - abs(fw - prefer_w) * 1000
+                - abs(fh - prefer_h) * 1000
+            )
+        elif fw == 1280 and fh == 720:
+            match_bonus = 50_000_000
+        score = area + match_bonus - ar_penalty
+        if score > best_score:
+            best_score = score
+            best_i = i
+    return best_i
+
 SETTING_DEFAULTS = {
     "vol_master": 0.8,
     "vol_music": 0.5,
@@ -164,4 +219,5 @@ SETTING_DEFAULTS = {
     "enemy_push": DEFAULT_ENEMY_PUSH,
     "show_hints": DEFAULT_SHOW_HINTS,
     "brightness": DEFAULT_BRIGHTNESS,
+    "auto_resolution": DEFAULT_AUTO_RESOLUTION,
 }

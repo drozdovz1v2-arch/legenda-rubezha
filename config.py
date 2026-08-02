@@ -1,6 +1,6 @@
 # Название и версия игры (отображаются в меню и заголовке окна)
 GAME_TITLE = "Легенда Рубежа"
-GAME_VERSION = "beta 0.0.0.4"
+GAME_VERSION = "beta 0.0.0.5"
 
 # Размеры экрана по умолчанию и FPS
 SCREEN_WIDTH = 1280
@@ -11,27 +11,27 @@ FPS = 60
 TILE_SIZE = 32
 PLAYER_SIZE = 32
 
-# Размеры всей карты в блоках (100×100 — ~3200×3200 px)
-MAP_WIDTH = 100
-MAP_HEIGHT = 100
+# Размеры всей карты в блоках (150×150 — ~4800×4800 px)
+MAP_WIDTH = 150
+MAP_HEIGHT = 150
 
 WORLD_WIDTH = MAP_WIDTH * TILE_SIZE
 WORLD_HEIGHT = MAP_HEIGHT * TILE_SIZE
 
 # Центральная площадь (без препятствий, старт игрока)
-PLAZA_MIN = 42
-PLAZA_MAX = 58
-SPAWN_EXCLUDE_MIN = 38
-SPAWN_EXCLUDE_MAX = 62
+PLAZA_MIN = 63
+PLAZA_MAX = 87
+SPAWN_EXCLUDE_MIN = 57
+SPAWN_EXCLUDE_MAX = 93
 
 # Скорость игрока
 PLAYER_SPEED = 4
 
 # Границы биомов (в тайлах): лес | пустыня по X, снег по Y (север), руины — юго-запад
-BIOME_BOUNDARY_X = 50
-SNOW_BOUNDARY_Y = 25
-RUINS_BOUNDARY_X = 30
-RUINS_BOUNDARY_Y = 70
+BIOME_BOUNDARY_X = 75
+SNOW_BOUNDARY_Y = 38
+RUINS_BOUNDARY_X = 45
+RUINS_BOUNDARY_Y = 105
 
 # Хитбоксы сущностей: (смещение X, смещение Y, ширина, высота) от sprite.rect
 PLAYER_COLLISION_INSET = (8, 14, 16, 12)
@@ -78,13 +78,13 @@ TILE_COLLISION = {
 }
 
 # Лимиты врагов и волны респавна (хардкор — больше угроз на карте)
-MAX_SLIMES = 26
-MAX_BOSSES = 4
-MAX_FROST = 16
-MAX_WOLVES = 10
-MAX_SCORPIONS = 12
-MAX_WRAITHS = 12
-CHEST_COUNT = 10
+MAX_SLIMES = 40
+MAX_BOSSES = 6
+MAX_FROST = 24
+MAX_WOLVES = 15
+MAX_SCORPIONS = 18
+MAX_WRAITHS = 18
+CHEST_COUNT = 15
 RESPAWN_INTERVAL = 520
 RESPAWN_FILL_RATIO = 0.45
 

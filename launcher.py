@@ -195,22 +195,91 @@ def download_file(url: str, dest: Path, progress_cb, timeout: int) -> None:
 
 PENDING_UPDATE_DIR = "_pending_update"
 SKIP_UPDATE_PREFIXES = ("Launcher/",)
+COPY_RETRIES = 5
+COPY_RETRY_DELAY = 0.35
 
 
-def is_game_running(exe_name: str = "LegendaRubezha.exe") -> bool:
-    if sys.platform != "win32":
+def is_process_running(image_name: str) -> bool:
+    if sys.platform != "win32" or not image_name:
         return False
     try:
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         result = subprocess.run(
-            ["tasklist", "/FI", f"IMAGENAME eq {exe_name}", "/NH"],
+            ["tasklist", "/FI", f"IMAGENAME eq {image_name}", "/NH"],
             capture_output=True,
             text=True,
             creationflags=flags,
         )
-        return exe_name.lower() in (result.stdout or "").lower()
+        return image_name.lower() in (result.stdout or "").lower()
     except OSError:
         return False
+
+
+def is_game_running(exe_name: str = "LegendaRubezha.exe") -> bool:
+    return is_process_running(exe_name)
+
+
+def should_skip_locked_dest(dest: Path, game_exe: str) -> bool:
+    name = dest.name.lower()
+    if name in {game_exe.lower(), Path(sys.executable).name.lower()}:
+        return is_process_running(dest.name) or is_process_running(game_exe)
+    return False
+
+
+def copy_with_retry(src: Path, dest: Path) -> None:
+    last_error = None
+    for attempt in range(COPY_RETRIES):
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+            return
+        except (PermissionError, OSError) as exc:
+            last_error = exc
+            if attempt + 1 < COPY_RETRIES:
+                time.sleep(COPY_RETRY_DELAY)
+    if last_error is not None:
+        raise last_error
+
+
+def install_file(src: Path, rel: Path, target_dir: Path, pending_root: Path, game_exe: str) -> bool:
+    """Копирует файл. True = установлен сразу, False = отложен в _pending_update."""
+    dest = target_dir / rel
+    pending_dest = pending_root / rel
+    if should_skip_locked_dest(dest, game_exe):
+        pending_dest.parent.mkdir(parents=True, exist_ok=True)
+        copy_with_retry(src, pending_dest)
+        return False
+    try:
+        copy_with_retry(src, dest)
+        return True
+    except (PermissionError, OSError):
+        pending_dest.parent.mkdir(parents=True, exist_ok=True)
+        copy_with_retry(src, pending_dest)
+        return False
+
+
+def write_finish_update_script(base: Path, launcher_dir: Path) -> Path:
+    script = base / "_finish_update.bat"
+    if getattr(sys, "frozen", False):
+        launcher_exe = Path(sys.executable).resolve()
+        apply_cmd = f'"{launcher_exe}" --apply-pending "{base}"'
+    else:
+        launcher_exe = launcher_dir / "LegendaRubezhaLauncher.exe"
+        if not launcher_exe.is_file():
+            launcher_exe = base / "LegendaRubezhaLauncher.exe"
+        apply_cmd = f'python "{Path(__file__).resolve()}" --apply-pending "{base}"'
+    lines = [
+        "@echo off",
+        "chcp 65001 >nul",
+        f"cd /d \"{base}\"",
+        "timeout /t 2 /nobreak >nul",
+        apply_cmd,
+    ]
+    if launcher_exe.is_file():
+        lines.append(f"start \"\" \"{launcher_exe}\"")
+    lines.append("del \"%~f0\"")
+    script.write_text("\r\n".join(lines), encoding="utf-8")
+    return script
 
 
 def apply_pending_updates(target_dir: Path) -> int:
@@ -225,7 +294,7 @@ def apply_pending_updates(target_dir: Path) -> int:
         dest = target_dir / rel
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest)
+            copy_with_retry(src, dest)
             src.unlink()
             applied += 1
         except OSError:
@@ -243,7 +312,7 @@ def apply_pending_updates(target_dir: Path) -> int:
     return applied
 
 
-def apply_update_zip(zip_path: Path, target_dir: Path, progress_cb) -> list[str]:
+def apply_update_zip(zip_path: Path, target_dir: Path, progress_cb, game_exe: str = "LegendaRubezha.exe") -> list[str]:
     deferred = []
     with tempfile.TemporaryDirectory(prefix="lr_update_") as tmp:
         tmp_path = Path(tmp)
@@ -261,18 +330,18 @@ def apply_update_zip(zip_path: Path, target_dir: Path, progress_cb) -> list[str]
             rel_posix = rel.as_posix()
             if rel_posix.startswith(SKIP_UPDATE_PREFIXES):
                 continue
-            dest = target_dir / rel
             try:
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dest)
-            except (PermissionError, OSError) as exc:
-                winerr = getattr(exc, "winerror", None)
-                if winerr not in (13, 32) and not isinstance(exc, PermissionError):
-                    raise
+                installed = install_file(src, rel, target_dir, pending_root, game_exe)
+                if not installed:
+                    deferred.append(rel_posix)
+            except (PermissionError, OSError):
                 pending_dest = pending_root / rel
                 pending_dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, pending_dest)
-                deferred.append(rel_posix)
+                try:
+                    copy_with_retry(src, pending_dest)
+                    deferred.append(rel_posix)
+                except (PermissionError, OSError):
+                    pass
             progress_cb(index / total)
     return deferred
 
@@ -295,6 +364,7 @@ class LauncherApp:
         self.latest = None
         self.update_available = False
         self._busy = False
+        self._deferred_restart = False
 
         self._build_ui()
         pending = apply_pending_updates(self.base)
@@ -618,7 +688,12 @@ class LauncherApp:
                     def install_progress(ratio):
                         self.root.after(0, lambda: self.progress.configure(value=45 + ratio * 55))
 
-                    deferred = apply_update_zip(zip_path, self.base, install_progress)
+                    deferred = apply_update_zip(
+                        zip_path,
+                        self.base,
+                        install_progress,
+                        game_exe,
+                    )
                     if deferred:
                         apply_pending_updates(self.base)
 
@@ -630,10 +705,7 @@ class LauncherApp:
                     write_json(self.version_path, self.local_version)
                     self.latest = latest
                     if deferred:
-                        notice = (
-                            "Часть файлов была занята. Закрой LegendaRubezha.exe "
-                            "и перезапусти лаунчер — обновление завершится автоматически."
-                        )
+                        notice = "deferred"
             except Exception as exc:
                 error = str(exc)
 
@@ -652,8 +724,25 @@ class LauncherApp:
         self.progress["value"] = 100
         self.version_label.configure(text=self._version_text())
         self._set_status("Обновление установлено!", COLORS["ok"])
-        if notice:
-            messagebox.showinfo(GAME_TITLE, notice)
+        if notice == "deferred":
+            if messagebox.askyesno(
+                GAME_TITLE,
+                "Часть файлов была занята другим процессом.\n"
+                "Перезапустить лаунчер сейчас для завершения обновления?",
+            ):
+                script = write_finish_update_script(self.base, self.launcher_dir)
+                subprocess.Popen(
+                    ["cmd", "/c", str(script)],
+                    cwd=str(self.base),
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+                self.root.destroy()
+                return
+            messagebox.showinfo(
+                GAME_TITLE,
+                "Закрой игру и лаунчер, затем открой лаунчер снова — "
+                "обновление завершится автоматически.",
+            )
         else:
             messagebox.showinfo(GAME_TITLE, "Игра успешно обновлена. Приятной игры!")
         self.check_updates()
@@ -687,6 +776,12 @@ class LauncherApp:
 
 
 def main():
+    if len(sys.argv) >= 3 and sys.argv[1] == "--apply-pending":
+        base = Path(sys.argv[2]).resolve()
+        applied = apply_pending_updates(base)
+        if applied:
+            print(f"Applied {applied} pending update file(s).")
+        return
     LauncherApp().run()
 
 

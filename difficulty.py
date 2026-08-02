@@ -158,13 +158,14 @@ class DifficultyManager:
 
 
 
-    def scale_enemy(self, enemy, is_boss=False, player_level=1, aggro_mult=1.0):
+    def scale_enemy(self, enemy, is_boss=False, player_level=1, aggro_mult=1.0, zone_mult=1.0):
 
         if getattr(enemy, "difficulty_scaled", False):
 
             return
 
         mult = self.boss_multiplier(player_level) if is_boss else self.stat_multiplier(player_level)
+        mult *= max(1.0, float(zone_mult))
 
         if hasattr(enemy, "max_hp"):
 

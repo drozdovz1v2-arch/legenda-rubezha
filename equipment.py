@@ -52,6 +52,73 @@ EQUIPMENT = {
         "color": (200, 80, 80),
         "rarity": "common",
     },
+    "padded_vest": {
+        "slot": "armor",
+        "name": "Стёганка караванщика",
+        "max_hp": 12,
+        "damage_reduction": 0.05,
+        "color": (140, 100, 55),
+        "rarity": "common",
+    },
+    "hunter_mail": {
+        "slot": "armor",
+        "name": "Кольчуга охотника",
+        "max_hp": 22,
+        "damage_reduction": 0.07,
+        "color": (120, 130, 95),
+        "rarity": "uncommon",
+    },
+    "frost_plate": {
+        "slot": "armor",
+        "name": "Ледяной нагрудник",
+        "max_hp": 35,
+        "damage_reduction": 0.10,
+        "color": (130, 190, 220),
+        "rarity": "rare",
+    },
+    "caravan_plate": {
+        "slot": "armor",
+        "name": "Латы каравана",
+        "max_hp": 40,
+        "damage_reduction": 0.11,
+        "gold_multiplier": 0.08,
+        "color": (190, 150, 70),
+        "rarity": "rare",
+    },
+    "wraith_mail": {
+        "slot": "armor",
+        "name": "Кольчуга призраков",
+        "max_hp": 28,
+        "damage_reduction": 0.12,
+        "speed_bonus": 0.08,
+        "color": (110, 90, 150),
+        "rarity": "epic",
+    },
+    "aegis_plate": {
+        "slot": "armor",
+        "name": "Эгида стража",
+        "max_hp": 55,
+        "damage_reduction": 0.14,
+        "color": (210, 200, 120),
+        "rarity": "epic",
+    },
+    "ice_bulwark": {
+        "slot": "armor",
+        "name": "Ледяной бастион",
+        "max_hp": 65,
+        "damage_reduction": 0.16,
+        "color": (160, 210, 255),
+        "rarity": "epic",
+    },
+    "border_armor": {
+        "slot": "armor",
+        "name": "Доспех рубежа",
+        "max_hp": 80,
+        "damage_reduction": 0.18,
+        "exp_multiplier": 0.08,
+        "color": (255, 200, 80),
+        "rarity": "legendary",
+    },
 }
 
 DROP_TABLE = {
@@ -66,6 +133,9 @@ class EquipmentManager:
 
     def reset(self):
         self.slots = {"armor": None, "charm": None}
+
+    def clear_armor_visual(self, player):
+        player.visual_armor_id = None
 
     def _apply_item_effects(self, player, item_id):
         item = EQUIPMENT[item_id]
@@ -97,7 +167,18 @@ class EquipmentManager:
             self._remove_item_effects(player, old)
         self.slots[slot] = item_id
         self._apply_item_effects(player, item_id)
+        if slot == "armor":
+            player.visual_armor_id = item_id
         player.hp = min(player.max_hp, player.hp)
+        return old
+
+    def unequip_slot(self, player, slot):
+        old = self.slots.get(slot)
+        if old:
+            self._remove_item_effects(player, old)
+            self.slots[slot] = None
+            if slot == "armor":
+                player.visual_armor_id = None
         return old
 
     def summary_lines(self):
@@ -130,6 +211,32 @@ def roll_equipment_drop(is_elite=False, is_boss=False):
     else:
         return None
     return random.choice(pool)
+
+
+def format_armor_stats(item_id):
+    """Краткая строка статов брони для UI."""
+    item = EQUIPMENT.get(item_id, {})
+    parts = []
+    if item.get("max_hp"):
+        parts.append(f"+{item['max_hp']} HP")
+    if item.get("damage_reduction"):
+        parts.append(f"−{int(item['damage_reduction'] * 100)}% урона")
+    if item.get("speed_bonus"):
+        parts.append(f"+{int(item['speed_bonus'] * 100)}% скорость")
+    if item.get("gold_multiplier"):
+        parts.append(f"+{int(item['gold_multiplier'] * 100)}% золото")
+    if item.get("exp_multiplier"):
+        parts.append(f"+{int(item['exp_multiplier'] * 100)}% опыт")
+    return " · ".join(parts) if parts else "Броня"
+
+
+def get_equipped_armor_name(equipment):
+    if not equipment:
+        return "нет"
+    item_id = equipment.slots.get("armor")
+    if not item_id:
+        return "нет"
+    return EQUIPMENT.get(item_id, {}).get("name", item_id)
 
 
 class EquipmentDrop(pygame.sprite.Sprite):

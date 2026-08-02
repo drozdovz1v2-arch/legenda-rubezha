@@ -11,6 +11,7 @@ from config import (
     PLAYER_COLLISION_INSET,
 )
 from assets import get_player_animations
+from player_visuals import compose_player_image
 from collision import move_and_collide
 from status_effects import StatusEffectManager
 from combat import angle_to_facing, facing_to_angle, compute_aim_angle
@@ -62,6 +63,8 @@ class Player(pygame.sprite.Sprite):
         self.attack_range_bonus = 0
         self.attack_range = 40
         self.purchased_weapons = ["Железный меч"]
+        self.purchased_armor = []
+        self.visual_armor_id = None
         self.potions_count = 0
 
         self.dash_unlocked = False
@@ -193,12 +196,21 @@ class Player(pygame.sprite.Sprite):
             self.facing = "down"
         else:
             self.facing = angle_to_facing(self.aim_angle)
+    def _compose_frame(self, frame):
+        facing = self.attack_facing if self.is_attacking else self.facing
+        return compose_player_image(
+            frame,
+            facing,
+            getattr(self, "visual_armor_id", None),
+            self.weapon_name,
+        )
+
     def _update_animation(self):
         if self.is_attacking:
             elapsed = ATTACK_DURATION - self.attack_timer
             phase = min(ATTACK_PHASES - 1, (elapsed * ATTACK_PHASES) // ATTACK_DURATION)
             frames = self.animations["attack"][self.attack_facing]
-            self.image = frames[min(phase, len(frames) - 1)]
+            self.image = self._compose_frame(frames[min(phase, len(frames) - 1)])
             return
 
         moving = self.change_x != 0 or self.change_y != 0
@@ -207,11 +219,11 @@ class Player(pygame.sprite.Sprite):
             if self.anim_counter >= WALK_FRAME_DELAY:
                 self.anim_counter = 0
                 self.walk_frame = (self.walk_frame + 1) % 4
-            self.image = self.animations["walk"][self.facing][self.walk_frame]
+            self.image = self._compose_frame(self.animations["walk"][self.facing][self.walk_frame])
         else:
             self.anim_counter = 0
             self.walk_frame = 0
-            self.image = self.animations["idle"][self.facing]
+            self.image = self._compose_frame(self.animations["idle"][self.facing])
 
     def handle_input(self):
         keys = pygame.key.get_pressed()

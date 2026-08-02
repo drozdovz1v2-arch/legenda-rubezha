@@ -13,6 +13,7 @@ from game_settings import (
     build_resolution_list,
     resolve_res_index,
     format_resolution_label,
+    fit_resolution,
 )
 from ui_theme import draw_rounded_panel
 
@@ -238,6 +239,9 @@ class SettingsMenu:
         )
         y = self._toggle(screen, "VSync", y, game.vsync, "vsync_toggle")
         y = self._toggle(screen, "Полноэкранный режим", y, game.fullscreen, "fullscreen_toggle")
+        y = self._toggle(
+            screen, "Авто-разрешение под экран", y, game.auto_resolution, "auto_res_toggle"
+        )
         y += 8
         y = self._section(screen, "ЭФФЕКТЫ", y)
         y = self._toggle(screen, "Частицы", y, game.particles_enabled, "particles_toggle")
@@ -254,7 +258,11 @@ class SettingsMenu:
             cur = game.resolutions[game.res_index]
         else:
             cur = (game.current_w, game.current_h)
-        res_label = format_resolution_label(cur[0], cur[1], self._desktop_size())
+        if getattr(game, "auto_resolution", True):
+            cur = fit_resolution(cur[0], cur[1], *self._desktop_size())
+            res_label = f"Авто ({cur[0]}×{cur[1]})"
+        else:
+            res_label = format_resolution_label(cur[0], cur[1], self._desktop_size())
         if game.fullscreen:
             res_label += " · полный экран"
         y = self._cycle_button(screen, "Разрешение экрана", y, res_label, "dropdown_toggle")
@@ -374,6 +382,7 @@ class SettingsMenu:
             if self.dropdown_open:
                 for idx, item in self.dropdown_rects:
                     if item.collidepoint(pos):
+                        game.auto_resolution = False
                         game.res_index = idx
                         game.apply_display_mode()
                         self.dropdown_open = False
@@ -417,6 +426,7 @@ class SettingsMenu:
             toggles = {
                 "vsync_toggle": ("vsync", lambda g, v: g.apply_vsync(v)),
                 "fullscreen_toggle": ("fullscreen", lambda g, v: g.apply_fullscreen(v)),
+                "auto_res_toggle": ("auto_resolution", lambda g, v: g.apply_auto_resolution(v)),
                 "particles_toggle": ("particles_enabled", lambda g, v: g.apply_particles(v)),
                 "effects_toggle": ("screen_effects_enabled", lambda g, v: g.apply_screen_effects(v)),
                 "weather_toggle": ("weather_enabled", lambda g, v: g.apply_weather(v)),

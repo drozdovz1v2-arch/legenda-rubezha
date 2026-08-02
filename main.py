@@ -66,6 +66,7 @@ from game_settings import (
     DEFAULT_SHOW_HINTS,
     DEFAULT_BRIGHTNESS,
     DEFAULT_FULLSCREEN,
+    DEFAULT_AUTO_RESOLUTION,
     FPS_OPTIONS,
     DAY_SPEED_OPTIONS,
     UI_SCALE_OPTIONS,
@@ -74,7 +75,19 @@ from game_settings import (
     SETTING_DEFAULTS,
     build_resolution_list,
     resolve_res_index,
+    get_desktop_size,
+    fit_resolution,
+    pick_best_resolution_index,
 )
+from world_zones import (
+    zone_tier_at,
+    zone_label,
+    zone_stat_multiplier,
+    wolf_spawn_chance,
+    desert_allows_boss,
+    desert_min_spawn_tier,
+)
+from shop import WeaponShopUI, weapon_stats_dict, POTION_HEAL, POTION_PRICE, effective_price
 from settings_menu import SettingsMenu
 from intro import IntroScreen
 from finale import FinaleScreen
@@ -180,6 +193,7 @@ class Game:
         self.enemy_push = DEFAULT_ENEMY_PUSH
         self.show_hints = DEFAULT_SHOW_HINTS
         self.brightness = DEFAULT_BRIGHTNESS
+        self.auto_resolution = DEFAULT_AUTO_RESOLUTION
         self.ui_scale_index = UI_SCALE_OPTIONS.index(DEFAULT_UI_SCALE)
         self.settings_menu = SettingsMenu()
         self._aim_targets = []
@@ -191,10 +205,7 @@ class Game:
         self.dropdown_rects = [] 
         
         self.shop_buttons = {}
-        self.shop_weapons = [
-            {"name": "Стальной палаш", "price": 30, "damage": 25, "range": 60, "desc": "Урон: 25, Дальность: +50%"},
-            {"name": "Клинок света", "price": 75, "damage": 50, "range": 80, "desc": "Урон: 50, Дальность: +100%"}
-        ]
+        self.shop_ui = WeaponShopUI()
         
         self.projectiles_group = pygame.sprite.Group()
         self.loot_group = pygame.sprite.Group()
@@ -251,6 +262,10 @@ class Game:
         self.apply_audio_settings()
         self.audio.sync_state_music(self.state)
         self._last_state = self.state
+        self._player_zone_tier = -1
+        self.max_zone_tier_reached = 0
+        self._saved_res_w = None
+        self._saved_res_h = None
 
     def on_state_change(self, new_state):
         if new_state == self._last_state:
@@ -263,8 +278,24 @@ class Game:
         self.audio.sync_state_music(new_state)
 
     def set_state(self, new_state):
+        prev = self.state
+        if new_state != prev and (
+            prev == "SETTINGS"
+            or (new_state == "MENU" and prev in ("PLAYING", "PAUSE", "SHOP"))
+        ):
+            self.save_settings_only()
         self.on_state_change(new_state)
         self.state = new_state
+
+    def _enemy_zone_mult(self, enemy):
+        if not getattr(self, "tilemap", None) or not hasattr(enemy, "rect"):
+            return 1.0
+        gx = enemy.rect.centerx // TILE_SIZE
+        gy = enemy.rect.centery // TILE_SIZE
+        biome = self.tilemap.biome_at(gx, gy)
+        tier = zone_tier_at(gx, gy, biome)
+        enemy.zone_tier = tier
+        return zone_stat_multiplier(tier)
 
     def sync_screen_size(self):
         """Синхронизирует логический размер с реальным буфером экрана."""
@@ -283,17 +314,38 @@ class Game:
         )
 
     def apply_display_mode(self):
+        desktop_w, desktop_h = get_desktop_size()
+        prefer_w = getattr(self, "_saved_res_w", None)
+        prefer_h = getattr(self, "_saved_res_h", None)
+        if not prefer_w and 0 <= self.res_index < len(self.resolutions):
+            prefer_w, prefer_h = self.resolutions[self.res_index]
+
+        if getattr(self, "auto_resolution", True):
+            self.res_index = pick_best_resolution_index(
+                self.resolutions,
+                desktop_w,
+                desktop_h,
+                prefer_w,
+                prefer_h,
+            )
+
         if 0 <= self.res_index < len(self.resolutions):
-            size = self.resolutions[self.res_index]
+            logic_w, logic_h = self.resolutions[self.res_index]
         else:
-            size = (self.current_w, self.current_h)
+            logic_w, logic_h = self.current_w, self.current_h
+
+        if self.fullscreen:
+            size = (desktop_w, desktop_h)
+        else:
+            size = fit_resolution(logic_w, logic_h, desktop_w, desktop_h)
+
         flags = pygame.FULLSCREEN if self.fullscreen else 0
         self.screen = pygame.display.set_mode(
             size,
             flags,
             vsync=1 if self.vsync else 0,
         )
-        self.sync_screen_size()
+        self.current_w, self.current_h = size
         self.effects.invalidate_vignette_cache()
         self.hud.invalidate_minimap_cache()
         self.rebuild_tile_cache()
@@ -329,6 +381,10 @@ class Game:
 
     def apply_fullscreen(self, value):
         self.fullscreen = value
+        self.apply_display_mode()
+
+    def apply_auto_resolution(self, value):
+        self.auto_resolution = value
         self.apply_display_mode()
 
     def apply_particles(self, value):
@@ -451,24 +507,24 @@ class Game:
         for enemy in self.enemies_group:
             enemy.difficulty_scaled = False
             is_boss = isinstance(enemy, (BlueBoss, IceGuardian, SandColossus))
+            zone_mult = self._enemy_zone_mult(enemy)
             self.difficulty.scale_enemy(
-                enemy, is_boss=is_boss, player_level=level, aggro_mult=aggro
+                enemy, is_boss=is_boss, player_level=level, aggro_mult=aggro, zone_mult=zone_mult
             )
 
     def _register_enemy(self, enemy, is_boss=False):
         self._sync_difficulty_modifiers()
         level = self.player.level if self.player else 1
         aggro = getattr(self.player, "enemy_aggro_mult", 1.0) if self.player else 1.0
+        zone_mult = self._enemy_zone_mult(enemy)
         self.difficulty.scale_enemy(
-            enemy, is_boss=is_boss, player_level=level, aggro_mult=aggro
+            enemy, is_boss=is_boss, player_level=level, aggro_mult=aggro, zone_mult=zone_mult
         )
         self.enemies_group.add(enemy)
 
     def _sync_player_build(self):
         """Пересчитать статы скиллов поверх оружия и экипировки."""
-        weapon_stats = {"Железный меч": (PLAYER_START_DAMAGE, 40)}
-        for wpn in self.shop_weapons:
-            weapon_stats[wpn["name"]] = (wpn["damage"], wpn["range"])
+        weapon_stats = weapon_stats_dict()
         dmg, rng = weapon_stats.get(self.player.weapon_name, (PLAYER_START_DAMAGE, 40))
         self.player.set_weapon_stats(dmg, rng)
         reapply_all_skill_stacks(self.player)
@@ -603,8 +659,14 @@ class Game:
             biome = self.tilemap.biome_at(gx, gy)
             tile = self.tilemap.matrix[gy][gx]
             px, py = gx * TILE_SIZE + 4, gy * TILE_SIZE + 4
+            tier = zone_tier_at(gx, gy, biome)
             if biome == "forest" and counts["slimes"] < limits["slimes"] and tile == TILE_FLOOR:
-                if counts["wolves"] < limits["wolves"] and random.random() < 0.32:
+                wolf_ok = (
+                    tier >= 2
+                    and counts["wolves"] < limits["wolves"]
+                    and random.random() < wolf_spawn_chance(tier)
+                )
+                if wolf_ok:
                     enemy = ForestWolf(px, py)
                     if random.random() < self._elite_spawn_chance(0.9):
                         enemy.make_elite()
@@ -617,8 +679,10 @@ class Game:
                     self._register_enemy(enemy)
                     counts["slimes"] += 1
             elif biome == "desert" and tile == TILE_SAND:
+                if tier < desert_min_spawn_tier():
+                    continue
                 need_scorpions = counts["scorpions"] < limits["scorpions"]
-                need_bosses = counts["bosses"] < limits["bosses"]
+                need_bosses = counts["bosses"] < limits["bosses"] and desert_allows_boss(tier)
                 if not need_scorpions and not need_bosses:
                     continue
                 spawn_scorpion = need_scorpions and (
@@ -641,6 +705,8 @@ class Game:
                 self._register_enemy(enemy)
                 counts["frost"] += 1
             elif biome == "ruins" and counts["wraiths"] < limits["wraiths"] and tile == TILE_RUINS:
+                if tier < 2:
+                    continue
                 enemy = RuinWraith(px, py)
                 if random.random() < self._elite_spawn_chance(1.05):
                     enemy.make_elite()
@@ -674,7 +740,7 @@ class Game:
             return
         rng = random.Random(self.tilemap.seed + 404)
         for _ in range(120):
-            gx = rng.randint(55, MAP_WIDTH - 4)
+            gx = rng.randint(MAP_WIDTH // 2 + 10, MAP_WIDTH - 4)
             gy = rng.randint(2, SNOW_BOUNDARY_Y - 2)
             if self.tilemap.is_walkable_spawn(gx, gy) and self.tilemap.biome_at(gx, gy) == "snow":
                 self._register_enemy(IceGuardian(gx * TILE_SIZE, gy * TILE_SIZE), is_boss=True)
@@ -912,20 +978,28 @@ class Game:
     def _dialog_merchant(self, npc):
         def on_choice(choice_id, _choice):
             if choice_id == "shop":
+                self.shop_ui.reset_scroll()
                 self.set_state("SHOP")
             elif choice_id == "potion":
-                if self.player.gold >= 10:
-                    self.player.gold -= 10
+                price = effective_price({"price": POTION_PRICE}, self.player)
+                if self.player.gold >= price:
+                    self.player.gold -= price
                     self.player.potions_count += 1
                     self.audio.play_sfx("potion_pickup")
                     self.effects.spawn_potion_pickup(self.player.rect.centerx, self.player.rect.centery)
+                    self.quests._notify(f"Зелье куплено (+{POTION_HEAL} HP)")
 
+        potion_cost = effective_price({"price": POTION_PRICE}, self.player)
         self.dialog.open(
             npc.display_name,
-            ["Лучшее оружие — в моём арсенале!", "Зелья лечат на 40 HP."],
+            [
+                "Арсенал и доспехи растут вместе с угрозой мира.",
+                "Сильные вещи открываются по уровню, зонам и квестам.",
+                f"Зелья лечат на {POTION_HEAL} HP.",
+            ],
             choices=[
-                {"id": "shop", "label": "Открыть оружейную лавку"},
-                {"id": "potion", "label": "Купить зелье (10 G)"},
+                {"id": "shop", "label": "Открыть лавку (оружие и броня)"},
+                {"id": "potion", "label": f"Купить зелье ({potion_cost} G)"},
                 {"id": "leave", "label": "Уйти"},
             ],
             on_choice=on_choice,
@@ -1041,6 +1115,7 @@ class Game:
                 "player_attack_damage": self.player.attack_damage,
                 "player_attack_range": self.player.attack_range,
                 "player_purchased_weapons": self.player.purchased_weapons,
+                "player_purchased_armor": getattr(self.player, "purchased_armor", []),
                 "player_potions": self.player.potions_count,
                 "player_x": self.player.rect.x,
                 "player_y": self.player.rect.y,
@@ -1059,6 +1134,7 @@ class Game:
                 "difficulty": self.difficulty.to_dict(),
                 "session_kills": self.session_kills,
                 "story_finale_seen": self.story_finale_seen,
+                "max_zone_tier_reached": getattr(self, "max_zone_tier_reached", 0),
                 "world": serialize_world(
                     self.tilemap,
                     self.enemies_group,
@@ -1087,6 +1163,8 @@ class Game:
             with open(SAVE_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
             SettingsMenu.apply_dict(self, data)
+            self._saved_res_w = data.get("res_width")
+            self._saved_res_h = data.get("res_height")
             self.meta.load_dict(data.get("meta"))
             if 0 <= self.res_index < len(self.resolutions):
                 self.current_w, self.current_h = self.resolutions[self.res_index]
@@ -1103,11 +1181,13 @@ class Game:
                 self.player.weapon_name = data.get("player_weapon_name", "Железный меч")
                 self.player.attack_range = data.get("player_attack_range", 40)
                 self.player.purchased_weapons = data.get("player_purchased_weapons", ["Железный меч"])
+                self.player.purchased_armor = data.get("player_purchased_armor", [])
                 self.player.potions_count = data.get("player_potions", 0)
                 self.player.dash_unlocked = data.get("player_dash_unlocked", False)
                 self.player.title = data.get("player_title", "")
                 self.player.skill_stacks = dict(data.get("player_skill_stacks", {}))
                 self.equipment.reset()
+                self.equipment.clear_armor_visual(self.player)
                 self._sync_player_build()
                 self.equipment.load_dict(self.player, data.get("player_equipment"))
                 self.relics.load_dict(data.get("relics"))
@@ -1122,6 +1202,7 @@ class Game:
                 self._last_world_event = self.world_events.active
                 self.session_kills = int(data.get("session_kills", 0))
                 self.story_finale_seen = bool(data.get("story_finale_seen", False))
+                self.max_zone_tier_reached = int(data.get("max_zone_tier_reached", 0))
                 saved_hp = data.get("player_hp", PLAYER_START_HP)
                 self.player.hp = min(saved_hp, self.player.max_hp)
                 self.daynight.load_dict(data.get("daynight"))
@@ -1192,6 +1273,8 @@ class Game:
         self.daynight.reset()
         self.abilities.reset()
         self.equipment.reset()
+        if getattr(self, "player", None):
+            self.equipment.clear_armor_visual(self.player)
         self.achievements.reset()
         self.world_events.reset()
         self.difficulty.reset()
@@ -1207,6 +1290,8 @@ class Game:
         self._run_day_speed_mult = 1.0
         self.sand_colossus_defeated = False
         self.ice_guardian_defeated = False
+        self._player_zone_tier = -1
+        self.max_zone_tier_reached = 0
         self.player.ability_manager = self.abilities
         self.setup_world_entities()
 
@@ -1348,55 +1433,12 @@ class Game:
             self.set_state(getattr(self, "_settings_return", "MENU"))
 
     def draw_shop(self):
-        self.screen.fill((25, 30, 25))
-        mouse_pos = pygame.mouse.get_pos()
-        title_text = self.font_large.render("ОРУЖЕЙНАЯ ЛАВКА", True, (255, 215, 0))
-        self.screen.blit(title_text, title_text.get_rect(center=(self.current_w // 2, self.current_h // 6)))
-        gold_text = self.font_medium.render(f"Ваше золото: {self.player.gold} G", True, (255, 255, 0))
-        self.screen.blit(gold_text, gold_text.get_rect(center=(self.current_w // 2, self.current_h // 4)))
-        for i, wpn in enumerate(self.shop_weapons):
-            card_rect = pygame.Rect(self.current_w // 2 - 250, self.current_h // 3 + i * 110, 500, 90)
-            self.shop_buttons[wpn["name"]] = card_rect
-            if wpn["name"] in self.player.purchased_weapons:
-                bg_color, border_color, status_txt = (35, 45, 35), (0, 180, 0), "ЭКИПИРОВАНО" if self.player.weapon_name == wpn["name"] else "КУПЛЕНО (Клик для экипировки)"
-            elif self.player.gold >= wpn["price"]:
-                bg_color, border_color, status_txt = ((45, 55, 45), (255, 215, 0), f"КУПИТЬ: {wpn['price']} G") if card_rect.collidepoint(mouse_pos) else ((35, 40, 35), (150, 130, 0), f"КУПИТЬ: {wpn['price']} G")
-            else:
-                bg_color, border_color, status_txt = (30, 30, 30), (100, 50, 50), f"НЕДОСТАТОЧНО ЗОЛОТА ({wpn['price']} G)"
-            pygame.draw.rect(self.screen, bg_color, card_rect, border_radius=6)
-            pygame.draw.rect(self.screen, border_color, card_rect, 2, border_radius=6)
-            name_surf = self.font_medium.render(wpn["name"], True, (255, 255, 255))
-            desc_surf = self.font_small.render(wpn["desc"], True, (180, 180, 180))
-            stat_surf = self.font_small.render(status_txt, True, border_color)
-            self.screen.blit(name_surf, (card_rect.x + 20, card_rect.y + 15))
-            self.screen.blit(desc_surf, (card_rect.x + 20, card_rect.y + 50))
-            self.screen.blit(stat_surf, (card_rect.right - stat_surf.get_width() - 20, card_rect.y + 35))
-        cur_surf = self.font_small.render(f"Сейчас в руках: {self.player.weapon_name}", True, (200, 200, 200))
-        self.screen.blit(cur_surf, cur_surf.get_rect(center=(self.current_w // 2, self.current_h - 120)))
-        back_rect = pygame.Rect(self.current_w // 2 - 100, self.current_h - 70, 200, 40)
-        self.shop_buttons["back"] = back_rect
-        b_color = (255, 255, 255) if back_rect.collidepoint(mouse_pos) else (150, 150, 150)
-        back_surf = self.font_medium.render("НАЗАД В МЕНЮ", True, b_color)
-        self.screen.blit(back_surf, back_surf.get_rect(center=back_rect.center))
-        
+        self.shop_ui.draw(self.screen, self)
+
     def handle_shop_events(self, event):
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+        result = self.shop_ui.handle_event(event, self)
+        if result == "back":
             self.set_state("PLAYING" if self.game_initialized else "MENU")
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            pos = event.pos
-            if self.shop_buttons.get("back") and self.shop_buttons["back"].collidepoint(pos):
-                self.set_state("PLAYING" if self.game_initialized else "MENU")
-                return
-            for wpn in self.shop_weapons:
-                if self.shop_buttons.get(wpn["name"]) and self.shop_buttons[wpn["name"]].collidepoint(pos):
-                    if wpn["name"] in self.player.purchased_weapons:
-                        self.player.weapon_name = wpn["name"]
-                        self.player.set_weapon_stats(wpn["damage"], wpn["range"])
-                    elif self.player.gold >= wpn["price"]:
-                        self.player.gold -= wpn["price"]
-                        self.player.purchased_weapons.append(wpn["name"])
-                        self.player.weapon_name = wpn["name"]
-                        self.player.set_weapon_stats(wpn["damage"], wpn["range"])
                         
     def screen_to_world(self, screen_pos):
         sx, sy = screen_pos
@@ -1650,6 +1692,16 @@ class Game:
         self.world_events.tick_plague(self.player)
         self.achievements.update(self)
         self.update_tutorial_hints()
+        if self.tilemap and self.player:
+            pgx = self.player.rect.centerx // TILE_SIZE
+            pgy = self.player.rect.centery // TILE_SIZE
+            pbiome = self.tilemap.biome_at(pgx, pgy)
+            ptier = zone_tier_at(pgx, pgy, pbiome)
+            if ptier != getattr(self, "_player_zone_tier", -1):
+                self._player_zone_tier = ptier
+                self.max_zone_tier_reached = max(getattr(self, "max_zone_tier_reached", 0), ptier)
+                if ptier > 0:
+                    self.quests._notify(f"Зона: {zone_label(ptier)}")
         if self.get_current_biome() == "ruins":
             self.achievements.visited_ruins = True
         if not self.game_simulation_paused():
@@ -1860,7 +1912,7 @@ class Game:
                     self.interact_with_npc(self.nearby_npc)
                 elif event.key == pygame.K_e and self.player.potions_count > 0 and self.player.hp < self.player.max_hp:
                     self.player.potions_count -= 1
-                    heal_amount = int((40 + self.player.potion_heal_bonus) * self.player.potion_heal_mult)
+                    heal_amount = int((POTION_HEAL + self.player.potion_heal_bonus) * self.player.potion_heal_mult)
                     self.player.heal(heal_amount)
                     self.audio.play_sfx("potion_drink")
                     self.effects.spawn_heal_burst(self.player.rect.centerx, self.player.rect.centery)

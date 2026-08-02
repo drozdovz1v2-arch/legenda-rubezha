@@ -241,6 +241,9 @@ def draw_crosshair(screen, mouse_pos, valid_target=False):
 
 
 def draw_attack_swing(screen, camera, player, progress=1.0):
+    from player_visuals import get_weapon_style
+
+    style = get_weapon_style(getattr(player, "weapon_name", ""))
     cx, cy = camera.apply_pos(player.rect.centerx, player.rect.centery)
     radius = int(player.attack_range * (0.45 + 0.45 * progress))
     start = player.aim_angle - ATTACK_ARC * (0.35 + 0.65 * (1.0 - progress))
@@ -252,8 +255,10 @@ def draw_attack_swing(screen, camera, player, progress=1.0):
     swing = _SWING_SURF_CACHE["surface"]
     swing.fill((0, 0, 0, 0))
     local_rect = swing.get_rect().inflate(-8, -8)
-    pygame.draw.arc(swing, (255, 240, 140, 160), local_rect, start, end, 8)
-    pygame.draw.arc(swing, (255, 200, 60, 210), local_rect, start, end, 3)
+    outer = (*style["swing"], 160)
+    inner = (*style["swing_hot"], 210)
+    pygame.draw.arc(swing, outer, local_rect, start, end, 8)
+    pygame.draw.arc(swing, inner, local_rect, start, end, 3)
     screen.blit(swing, (cx - radius - 8, cy - radius - 8))
 
 
@@ -272,18 +277,21 @@ def draw_attack_sword_overlay(screen, camera, player):
     """Динамический меч по углу прицела во время атаки."""
     if not player.is_attacking:
         return
+    from player_visuals import get_weapon_style
+
+    style = get_weapon_style(getattr(player, "weapon_name", ""))
     progress = player.swing_progress()
     cx, cy = camera.apply_pos(player.rect.centerx, player.rect.centery)
     sword_angle = player.aim_angle + _sword_swing_offset(progress)
-    blade_len = 18 + int(10 * math.sin(progress * math.pi))
+    blade_len = style["blade_len"] + int(8 * math.sin(progress * math.pi))
     grip_dist = 7
     hx = cx + math.cos(sword_angle - 0.35) * grip_dist
     hy = cy + math.sin(sword_angle - 0.35) * grip_dist
     tx = cx + math.cos(sword_angle) * (grip_dist + blade_len)
     ty = cy + math.sin(sword_angle) * (grip_dist + blade_len)
-    pygame.draw.line(screen, (120, 80, 40), (cx, cy), (hx, hy), 3)
-    pygame.draw.line(screen, (185, 195, 215), (hx, hy), (tx, ty), 5)
-    pygame.draw.line(screen, (255, 255, 255), (hx, hy), (tx, ty), 1)
+    pygame.draw.line(screen, style["handle"], (cx, cy), (hx, hy), 3)
+    pygame.draw.line(screen, style["blade"], (hx, hy), (tx, ty), 5)
+    pygame.draw.line(screen, style["edge"], (hx, hy), (tx, ty), 1)
     if progress > 0.28 and progress < 0.72:
         trail_size = blade_len + 20
         if _TRAIL_SURF_CACHE["size"] != trail_size or _TRAIL_SURF_CACHE["surface"] is None:
@@ -296,5 +304,6 @@ def draw_attack_sword_overlay(screen, camera, player):
             local_c[0] + math.cos(sword_angle) * blade_len,
             local_c[1] + math.sin(sword_angle) * blade_len,
         )
-        pygame.draw.line(trail, (255, 230, 120, 90), local_c, trail_end, 8)
+        trail_color = (*style["swing"], 90)
+        pygame.draw.line(trail, trail_color, local_c, trail_end, 8)
         screen.blit(trail, (tx - local_c[0], ty - local_c[1]))
