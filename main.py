@@ -22,7 +22,7 @@ from loot import Potion
 from chests import Chest
 from audio_manager import AudioManager
 from collision import resolve_group_separation, separate_player_from_enemies
-from combat import find_attack_targets, draw_attack_aim, draw_attack_swing, draw_attack_sword_overlay, update_player_aim, preview_targets, draw_crosshair
+from combat import find_attack_targets, draw_attack_aim, draw_attack_swing, draw_attack_sword_overlay, update_player_aim, draw_crosshair
 from ui_theme import (
     AnimatedBackground,
     draw_menu_button,
@@ -72,6 +72,8 @@ from game_settings import (
     QUALITY_PRESETS,
     RESOLUTIONS,
     SETTING_DEFAULTS,
+    build_resolution_list,
+    resolve_res_index,
 )
 from settings_menu import SettingsMenu
 from intro import IntroScreen
@@ -180,6 +182,9 @@ class Game:
         self.brightness = DEFAULT_BRIGHTNESS
         self.ui_scale_index = UI_SCALE_OPTIONS.index(DEFAULT_UI_SCALE)
         self.settings_menu = SettingsMenu()
+        self._aim_targets = []
+        self._fps_display = ""
+        self._fps_display_frame = 0
 
         self.menu_buttons = {}
         self.settings_buttons = {}
@@ -239,6 +244,7 @@ class Game:
         self.menu_bg = AnimatedBackground()
 
         self.load_game()
+        self.refresh_resolutions()
         self.apply_performance_settings()
         self.apply_display_mode()
         self.audio = AudioManager(self.vol_master, self.vol_music, self.vol_sfx)
@@ -264,14 +270,24 @@ class Game:
         """Синхронизирует логический размер с реальным буфером экрана."""
         self.current_w, self.current_h = self.screen.get_size()
 
+    def refresh_resolutions(self):
+        saved = None
+        if 0 <= self.res_index < len(self.resolutions):
+            saved = self.resolutions[self.res_index]
+        self.resolutions = build_resolution_list()
+        self.res_index = resolve_res_index(
+            self.resolutions,
+            self.res_index,
+            saved[0] if saved else None,
+            saved[1] if saved else None,
+        )
+
     def apply_display_mode(self):
-        if self.fullscreen:
-            info = pygame.display.Info()
-            size = (max(800, info.current_w), max(600, info.current_h))
-            flags = pygame.FULLSCREEN
-        else:
+        if 0 <= self.res_index < len(self.resolutions):
             size = self.resolutions[self.res_index]
-            flags = 0
+        else:
+            size = (self.current_w, self.current_h)
+        flags = pygame.FULLSCREEN if self.fullscreen else 0
         self.screen = pygame.display.set_mode(
             size,
             flags,
@@ -281,6 +297,9 @@ class Game:
         self.effects.invalidate_vignette_cache()
         self.hud.invalidate_minimap_cache()
         self.rebuild_tile_cache()
+        if hasattr(self, "audio"):
+            biome = self.get_current_biome() if self.state in ("PLAYING", "PAUSE") and self.game_initialized else None
+            self.audio.on_display_changed(self.state, biome)
 
     def rebuild_tile_cache(self):
         if getattr(self, "tilemap", None) and getattr(self, "screen", None):
@@ -348,6 +367,7 @@ class Game:
         SettingsMenu.apply_dict(self, SETTING_DEFAULTS)
         self.day_speed_index = DAY_SPEED_OPTIONS.index(self.day_speed)
         self.ui_scale_index = UI_SCALE_OPTIONS.index(self.ui_scale)
+        self.refresh_resolutions()
         self.apply_display_mode()
         self.apply_performance_settings()
         self.apply_audio_settings()
@@ -364,6 +384,8 @@ class Game:
         for key in SETTING_DEFAULTS:
             if hasattr(self, key):
                 data[key] = getattr(self, key)
+        if 0 <= self.res_index < len(self.resolutions):
+            data["res_width"], data["res_height"] = self.resolutions[self.res_index]
         data["game_initialized"] = self.game_initialized
         try:
             with open(SAVE_PATH, "w", encoding="utf-8") as f:
@@ -372,7 +394,10 @@ class Game:
             print(f"Ошибка сохранения настроек: {e}")
 
     def get_settings_dict(self):
-        return {key: getattr(self, key) for key in SETTING_DEFAULTS if hasattr(self, key)}
+        data = {key: getattr(self, key) for key in SETTING_DEFAULTS if hasattr(self, key)}
+        if 0 <= self.res_index < len(self.resolutions):
+            data["res_width"], data["res_height"] = self.resolutions[self.res_index]
+        return data
 
     def apply_quality_preset(self, quality):
         self.quality = quality
@@ -1063,7 +1088,8 @@ class Game:
                 data = json.load(f)
             SettingsMenu.apply_dict(self, data)
             self.meta.load_dict(data.get("meta"))
-            self.current_w, self.current_h = self.resolutions[self.res_index]
+            if 0 <= self.res_index < len(self.resolutions):
+                self.current_w, self.current_h = self.resolutions[self.res_index]
             if data.get("game_initialized", False):
                 world_data = data.get("world")
                 map_seed = world_data.get("map_seed") if world_data else None
@@ -1386,7 +1412,7 @@ class Game:
         return True
 
     def resolve_player_attack(self):
-        targets = find_attack_targets(
+        targets = self._aim_targets or find_attack_targets(
             self.player, self.player.aim_angle, self.enemies_group, self.tilemap
         )
         if not targets:
@@ -1630,6 +1656,9 @@ class Game:
             mouse_screen = pygame.mouse.get_pos()
             wx, wy = self.screen_to_world(mouse_screen)
             update_player_aim(self.player, wx, wy, self.enemies_group, self.camera, mouse_screen)
+            self._aim_targets = find_attack_targets(
+                self.player, self.player.aim_angle, self.enemies_group, self.tilemap
+            )
         self.player.update(self.tilemap)
         if self.enemy_push and not self.player.is_dashing:
             separate_player_from_enemies(self.player, self.enemies_group, self.tilemap)
@@ -1650,7 +1679,9 @@ class Game:
         for shrine in self.shrines_group:
             shrine.update()
         enemy_count = len(enemy_list)
-        if enemy_count > 70 and self._frame % 2 == 0:
+        if enemy_count > 85:
+            pass
+        elif enemy_count > 60 and self._frame % 2 == 0:
             pass
         else:
             sep_iters = 1 if enemy_count > 40 else self.separation_iterations
@@ -1688,9 +1719,10 @@ class Game:
         self.camera.update(self.player, self.current_w, self.current_h)
         self.audio.update_biome_music(self.get_current_biome())
         self.try_respawn_enemies()
-        self.nearby_chest = next((c for c in self.chests_group if not c.opened and c.is_near(self.player.rect)), None)
-        self.nearby_shrine = next((s for s in self.shrines_group if s.is_near(self.player.rect)), None)
-        self.nearby_npc = next((n for n in self.npcs_group if n.is_near(self.player.rect)), None)
+        if self._frame % 4 == 0:
+            self.nearby_chest = next((c for c in self.chests_group if not c.opened and c.is_near(self.player.rect)), None)
+            self.nearby_shrine = next((s for s in self.shrines_group if s.is_near(self.player.rect)), None)
+            self.nearby_npc = next((n for n in self.npcs_group if n.is_near(self.player.rect)), None)
         self.try_open_pending_skill_picker()
         if self.player.hp <= 0:
             if self.relics.try_revive(self.player, self):
@@ -1726,10 +1758,8 @@ class Game:
             if proj.rect.colliderect(view_rect):
                 self.screen.blit(proj.image, self.camera.apply(proj))
         aim_targets = None
-        if not self.dialog.active and not self.skill_picker.active:
-            aim_targets = preview_targets(
-                self.player, self.player.aim_angle, self.enemies_group, self.tilemap
-            )
+        if self.state == "PLAYING" and not self.dialog.active and not self.skill_picker.active:
+            aim_targets = self._aim_targets
             draw_attack_aim(
                 self.screen, self.camera, self.player,
                 self.enemies_group, self.tilemap, self.player.can_attack(),
@@ -1740,9 +1770,12 @@ class Game:
             pulse = 0.55 + 0.45 * math.sin(pygame.time.get_ticks() * 0.02)
             pygame.draw.circle(self.screen, (100, 255, 190), player_pos.center, 24, 2)
             self.screen.blit(self.player.image, player_pos)
-            tint = pygame.Surface(player_pos.size, pygame.SRCALPHA)
-            tint.fill((120, 255, 200, int(50 + 40 * pulse)))
-            self.screen.blit(tint, player_pos)
+            tint_key = player_pos.size
+            if getattr(self, "_spawn_tint_size", None) != tint_key:
+                self._spawn_tint_size = tint_key
+                self._spawn_tint = pygame.Surface(tint_key, pygame.SRCALPHA)
+            self._spawn_tint.fill((120, 255, 200, int(50 + 40 * pulse)))
+            self.screen.blit(self._spawn_tint, player_pos)
         else:
             self.screen.blit(self.player.image, player_pos)
         if self.player.is_attacking:
@@ -1760,7 +1793,7 @@ class Game:
             self.draw_hud()
             self.hud.draw_enemy_combat_hints(self.screen, self.camera, self.enemies_group)
             self.hud.draw_enemy_health_bars(
-                self.screen, self.camera, self.enemies_group, pygame.mouse.get_pos()
+                self.screen, self.camera, self.enemies_group, pygame.mouse.get_pos(), view_rect
             )
         hp_ratio = max(0.0, self.player.hp / self.player.max_hp)
         if not self.skill_picker.active:
@@ -1781,7 +1814,12 @@ class Game:
         if self.state == "PLAYING" and not self.dialog.active and not self.skill_picker.active:
             draw_crosshair(self.screen, pygame.mouse.get_pos(), bool(aim_targets))
         if self.show_fps:
-            fps_surf = self.font_small.render(f"FPS: {int(self.clock.get_fps())}", True, (120, 255, 120))
+            if self._fps_display_frame <= 0:
+                self._fps_display = f"FPS: {int(self.clock.get_fps())}"
+                self._fps_display_frame = 15
+            else:
+                self._fps_display_frame -= 1
+            fps_surf = self.font_small.render(self._fps_display, True, (120, 255, 120))
             self.screen.blit(fps_surf, (self.current_w - fps_surf.get_width() - 14, self.current_h - 24))
 
     def handle_playing_events(self, event):
@@ -2013,6 +2051,10 @@ class Game:
                         self.finish_finale()
                                     
             self.sync_screen_size()
+
+            if hasattr(self, "audio"):
+                biome = self.get_current_biome() if self.state in ("PLAYING", "PAUSE") and self.game_initialized else None
+                self.audio.tick(self.state, biome)
 
             if self.state == "MENU":
                 self.menu_bg.update()

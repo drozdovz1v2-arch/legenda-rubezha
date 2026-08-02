@@ -46,8 +46,29 @@ jobs:
       - name: Pack update zip
         shell: pwsh
         run: |
+          $version = "${{ steps.ver.outputs.version }}"
+          $zip = "${{ steps.ver.outputs.zip }}"
+          $friendZip = "LegendaRubezha_FriendSetup_${version}.zip"
+          $stage = "dist/friend_package"
+
           New-Item -ItemType Directory -Force -Path updates/packages | Out-Null
-          Compress-Archive -Path dist/LegendaRubezha/* -DestinationPath updates/packages/${{ steps.ver.outputs.zip }} -Force
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          New-Item -ItemType Directory -Force -Path "$stage/updates" | Out-Null
+
+          New-Item -ItemType Directory -Force -Path "$stage/Launcher" | Out-Null
+
+          Copy-Item dist/LegendaRubezha/* $stage -Recurse -Force
+          Copy-Item dist/LegendaRubezhaLauncher/* "$stage/Launcher/" -Recurse -Force
+          Copy-Item updates/launcher_config.json $stage -Force
+          Copy-Item updates/version.json $stage -Force
+          Copy-Item updates/manifest.json "$stage/updates/" -Force
+          Copy-Item updates/github_repo.json "$stage/updates/" -Force
+          Copy-Item updates/КАК_УСТАНОВИТЬ.txt $stage -Force
+
+          Compress-Archive -Path "$stage/*" -DestinationPath "updates/packages/$zip" -Force
+          Compress-Archive -Path "$stage/*" -DestinationPath "updates/packages/$friendZip" -Force
+          echo "friend_zip=$friendZip" >> $env:GITHUB_OUTPUT
 
       - name: Compute SHA256
         id: hash
@@ -92,7 +113,8 @@ jobs:
             SHA256: `${{ steps.hash.outputs.sha256 }}`
           files: |
             updates/packages/${{ steps.ver.outputs.zip }}
-            dist/LegendaRubezhaLauncher.exe
+            updates/packages/LegendaRubezha_FriendSetup_${{ steps.ver.outputs.version }}.zip
+            dist/LegendaRubezhaLauncher/LegendaRubezhaLauncher.exe
 
       - name: Sync manifest to main
         shell: pwsh

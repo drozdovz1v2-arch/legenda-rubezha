@@ -3,7 +3,7 @@
 import math
 import pygame
 
-from collision import has_line_of_sight
+from collision import cached_line_of_sight
 
 
 def deal_damage_to_player(player, amount):
@@ -91,11 +91,12 @@ def compute_aim_angle(player_rect, world_x, world_y):
 def target_in_attack_cone(player_rect, aim_angle, target_rect, attack_range, arc=ATTACK_ARC):
     dx = target_rect.centerx - player_rect.centerx
     dy = target_rect.centery - player_rect.centery
-    dist = math.hypot(dx, dy)
+    dist_sq = dx * dx + dy * dy
     hit_padding = max(target_rect.width, target_rect.height) * 0.5
-    if dist > attack_range + hit_padding:
+    max_dist = attack_range + hit_padding
+    if dist_sq > max_dist * max_dist:
         return False
-    if dist <= 16:
+    if dist_sq <= 16 * 16:
         return True
     target_angle = math.atan2(dy, dx)
     diff = abs(normalize_angle(target_angle - aim_angle))
@@ -104,14 +105,20 @@ def target_in_attack_cone(player_rect, aim_angle, target_rect, attack_range, arc
 
 def find_attack_targets(player, aim_angle, enemies_group, tilemap):
     targets = []
+    px, py = player.rect.centerx, player.rect.centery
+    scan_range = player.attack_range + 32
+    scan_range_sq = scan_range * scan_range
     for enemy in enemies_group:
+        ex, ey = enemy.rect.centerx, enemy.rect.centery
+        dx, dy = ex - px, ey - py
+        dist_sq = dx * dx + dy * dy
+        if dist_sq > scan_range_sq:
+            continue
         if not target_in_attack_cone(player.rect, aim_angle, enemy.rect, player.attack_range):
             continue
-        if not has_line_of_sight(player.rect, enemy.rect, tilemap):
+        if not cached_line_of_sight(player, player.rect, enemy.rect, tilemap):
             continue
-        dx = enemy.rect.centerx - player.rect.centerx
-        dy = enemy.rect.centery - player.rect.centery
-        targets.append((math.hypot(dx, dy), enemy))
+        targets.append((dist_sq, enemy))
     targets.sort(key=lambda item: item[0])
     return [enemy for _, enemy in targets]
 

@@ -4,6 +4,8 @@ import pygame
 
 from config import PLAYER_COLLISION_INSET, ENEMY_COLLISION_INSET
 
+_LOS_PROBE = pygame.Rect(0, 0, 8, 8)
+
 
 def _inset_for(sprite):
     return getattr(sprite, "collision_inset", PLAYER_COLLISION_INSET)
@@ -38,8 +40,9 @@ def has_line_of_sight(from_rect, to_rect, tilemap, step=12):
         t = i / steps
         x = from_rect.centerx + dx * t
         y = from_rect.centery + dy * t
-        probe = pygame.Rect(int(x - 4), int(y - 4), 8, 8)
-        if rect_blocked(probe, tilemap):
+        _LOS_PROBE.x = int(x - 4)
+        _LOS_PROBE.y = int(y - 4)
+        if rect_blocked(_LOS_PROBE, tilemap):
             return False
     return True
 
@@ -123,20 +126,18 @@ def move_and_collide(sprite, dx, dy, tilemap):
     if move_x == 0 and move_y == 0:
         return
 
-    start = get_collision_rect(sprite).copy()
+    start = get_collision_rect(sprite)
+    target_x = start.x + move_x
+    target_y = start.y + move_y
+    primary = "xy" if abs(move_x) >= abs(move_y) else "yx"
+    secondary = "yx" if primary == "xy" else "xy"
 
     set_collision_rect(sprite, start.copy())
-    dist_xy = _try_move(sprite, move_x, move_y, tilemap, "xy")
-    result_xy = get_collision_rect(sprite).copy()
-
-    set_collision_rect(sprite, start.copy())
-    dist_yx = _try_move(sprite, move_x, move_y, tilemap, "yx")
-    result_yx = get_collision_rect(sprite).copy()
-
-    if dist_xy <= dist_yx:
-        set_collision_rect(sprite, result_xy)
-    else:
-        set_collision_rect(sprite, result_yx)
+    _try_move(sprite, move_x, move_y, tilemap, primary)
+    end = get_collision_rect(sprite)
+    if abs(end.x - target_x) > 0 or abs(end.y - target_y) > 0:
+        set_collision_rect(sprite, start.copy())
+        _try_move(sprite, move_x, move_y, tilemap, secondary)
 
 
 def separate_from_entities(sprite, others, padding=2):
@@ -183,11 +184,27 @@ def resolve_group_separation(group, tilemap, iterations=2, padding=2):
     count = len(sprites)
     if count == 0:
         return
+    if count > 85:
+        return
     if count > 45:
         iterations = 1
+    cell = 48
     for _ in range(iterations):
+        grid = {}
         for sprite in sprites:
-            separate_from_entities(sprite, sprites, padding=padding)
+            body = get_collision_rect(sprite)
+            key = (body.centerx // cell, body.centery // cell)
+            grid.setdefault(key, []).append(sprite)
+        for sprite in sprites:
+            body = get_collision_rect(sprite)
+            cx, cy = body.centerx // cell, body.centery // cell
+            neighbors = []
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    bucket = grid.get((cx + dx, cy + dy))
+                    if bucket:
+                        neighbors.extend(bucket)
+            separate_from_entities(sprite, neighbors, padding=padding)
             _resolve_obstacle_axis(sprite, tilemap, "x")
             _resolve_obstacle_axis(sprite, tilemap, "y")
 

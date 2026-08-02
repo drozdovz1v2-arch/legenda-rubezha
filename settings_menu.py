@@ -9,14 +9,18 @@ from game_settings import (
     UI_SCALE_LABELS,
     UI_SCALE_OPTIONS,
     SETTINGS_TABS,
-    RESOLUTIONS,
     SETTING_DEFAULTS,
+    build_resolution_list,
+    resolve_res_index,
+    format_resolution_label,
 )
 from ui_theme import draw_rounded_panel
 
 
 class SettingsMenu:
     SCROLL_STEP = 36
+    DROPDOWN_VISIBLE = 12
+    DROPDOWN_ITEM_H = 28
 
     TAB_HEIGHT = 32
     TAB_GAP = 8
@@ -27,6 +31,7 @@ class SettingsMenu:
         self.scroll = 0
         self.active_slider = None
         self.dropdown_open = False
+        self.res_dropdown_scroll = 0
         self.buttons = {}
         self.dropdown_rects = []
         self.font_title = pygame.font.SysFont("Arial", 34, bold=True)
@@ -54,7 +59,12 @@ class SettingsMenu:
     def reset_scroll(self):
         self.scroll = 0
         self.dropdown_open = False
+        self.res_dropdown_scroll = 0
         self.active_slider = None
+
+    def _desktop_size(self):
+        info = pygame.display.Info()
+        return (info.current_w, info.current_h)
 
     def _panel_rect(self, screen_w, screen_h):
         margin = 28
@@ -240,13 +250,21 @@ class SettingsMenu:
         )
         y += 8
         y = self._section(screen, "РАЗРЕШЕНИЕ", y)
-        if game.fullscreen:
-            res_label = f"{game.current_w} × {game.current_h} (экран)"
+        if 0 <= game.res_index < len(game.resolutions):
+            cur = game.resolutions[game.res_index]
         else:
-            cur = RESOLUTIONS[game.res_index]
-            res_label = f"{cur[0]} × {cur[1]}"
+            cur = (game.current_w, game.current_h)
+        res_label = format_resolution_label(cur[0], cur[1], self._desktop_size())
+        if game.fullscreen:
+            res_label += " · полный экран"
         y = self._cycle_button(screen, "Разрешение экрана", y, res_label, "dropdown_toggle")
-        return y
+        hint = self.font_small.render(
+            f"Доступно {len(game.resolutions)} режимов · колёсико в списке",
+            True,
+            (110, 115, 130),
+        )
+        screen.blit(hint, (self._layout["label_x"], y))
+        return y + 22
 
     def _draw_gameplay(self, screen, game, y):
         y = self._section(screen, "КАМЕРА", y)
@@ -283,24 +301,34 @@ class SettingsMenu:
         btn = self.buttons.get("dropdown_toggle")
         if not btn:
             return
+        resolutions = game.resolutions
+        if not resolutions:
+            return
         self.dropdown_rects = []
-        item_h = 28
-        list_rect = pygame.Rect(btn.x, btn.bottom + 2, btn.width, item_h * len(RESOLUTIONS))
+        visible_count = min(self.DROPDOWN_VISIBLE, len(resolutions))
+        max_scroll = max(0, len(resolutions) - visible_count)
+        self.res_dropdown_scroll = max(0, min(self.res_dropdown_scroll, max_scroll))
+        list_h = visible_count * self.DROPDOWN_ITEM_H
+        list_rect = pygame.Rect(btn.x, btn.bottom + 2, btn.width, list_h)
         pygame.draw.rect(screen, (25, 22, 32), list_rect)
         pygame.draw.rect(screen, (0, 180, 180), list_rect, 1)
-        for idx, res in enumerate(RESOLUTIONS):
-            item = pygame.Rect(btn.x, btn.bottom + 2 + idx * item_h, btn.width, item_h)
+        desktop = self._desktop_size()
+        for row, idx in enumerate(range(self.res_dropdown_scroll, self.res_dropdown_scroll + visible_count)):
+            res = resolutions[idx]
+            item = pygame.Rect(btn.x, btn.bottom + 2 + row * self.DROPDOWN_ITEM_H, btn.width, self.DROPDOWN_ITEM_H)
             self.dropdown_rects.append((idx, item))
             if item.collidepoint(mouse):
                 pygame.draw.rect(screen, (0, 120, 120), item)
             elif idx == game.res_index:
                 pygame.draw.rect(screen, (40, 70, 70), item)
-            label = f"{res[0]} × {res[1]}"
-            if idx == len(RESOLUTIONS) - 1:
-                label += " (4K)"
-            elif idx == 4:
-                label += " (FHD)"
+            label = format_resolution_label(res[0], res[1], desktop)
             screen.blit(self.font_small.render(label, True, (255, 255, 255)), (item.x + 10, item.y + 6))
+        if max_scroll > 0:
+            bar_x = btn.right - 6
+            bar_h = max(16, int(list_h * visible_count / len(resolutions)))
+            bar_y = list_rect.y + int((list_h - bar_h) * self.res_dropdown_scroll / max_scroll)
+            pygame.draw.rect(screen, (50, 55, 70), (bar_x, list_rect.y, 3, list_h), border_radius=2)
+            pygame.draw.rect(screen, (0, 180, 180), (bar_x, bar_y, 3, bar_h), border_radius=2)
 
     def _update_slider(self, game, slider_id, mouse_x):
         layout = self._layout
@@ -329,6 +357,14 @@ class SettingsMenu:
 
         if event.type == pygame.MOUSEWHEEL:
             panel = self._panel_rect(sw, sh)
+            if self.dropdown_open:
+                resolutions = game.resolutions
+                max_scroll = max(0, len(resolutions) - min(self.DROPDOWN_VISIBLE, len(resolutions)))
+                self.res_dropdown_scroll = max(
+                    0,
+                    min(max_scroll, self.res_dropdown_scroll - event.y * 3),
+                )
+                return None
             max_scroll = max(0, getattr(self, "_content_height", 0) - self._visible_height(panel))
             self.scroll = max(0, min(max_scroll, self.scroll - event.y * self.SCROLL_STEP))
             return None
@@ -359,8 +395,16 @@ class SettingsMenu:
                 return "back"
 
             if self.buttons.get("dropdown_toggle") and self.buttons["dropdown_toggle"].collidepoint(pos):
-                if not game.fullscreen:
-                    self.dropdown_open = not self.dropdown_open
+                self.dropdown_open = not self.dropdown_open
+                if self.dropdown_open:
+                    game.resolutions = build_resolution_list()
+                    if 0 <= game.res_index < len(game.resolutions):
+                        selected = game.res_index
+                    else:
+                        selected = 0
+                    visible = min(self.DROPDOWN_VISIBLE, len(game.resolutions))
+                    max_scroll = max(0, len(game.resolutions) - visible)
+                    self.res_dropdown_scroll = max(0, min(max_scroll, selected - visible // 2))
                 return None
 
             for key in ["low", "medium", "high"]:
@@ -438,5 +482,12 @@ class SettingsMenu:
             game.ui_scale_index = UI_SCALE_OPTIONS.index(game.ui_scale)
         else:
             game.ui_scale_index = 1
-        if 0 <= game.res_index < len(RESOLUTIONS):
-            game.current_w, game.current_h = RESOLUTIONS[game.res_index]
+        game.resolutions = build_resolution_list()
+        game.res_index = resolve_res_index(
+            game.resolutions,
+            game.res_index,
+            data.get("res_width"),
+            data.get("res_height"),
+        )
+        if 0 <= game.res_index < len(game.resolutions):
+            game.current_w, game.current_h = game.resolutions[game.res_index]

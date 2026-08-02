@@ -29,6 +29,9 @@ class Particle:
         return self.lifetime > 0 and self.size > 0.3
 
 
+_WEATHER_PROBE = pygame.Rect(0, 0, 2, 2)
+
+
 class EffectsManager:
     def __init__(self):
         self.particles = []
@@ -203,7 +206,14 @@ class EffectsManager:
 
     def update(self):
         if self.particles:
-            self.particles = [p for p in self.particles if p.update()]
+            write = 0
+            particles = self.particles
+            for idx in range(len(particles)):
+                if particles[idx].update():
+                    if write != idx:
+                        particles[write] = particles[idx]
+                    write += 1
+            del particles[write:]
         if self.level_up_timer > 0:
             self.level_up_timer -= 1
         if self.relic_flash_timer > 0:
@@ -253,15 +263,22 @@ class EffectsManager:
                              random.choice([(80, 160, 70), (120, 180, 80)]), 2, 100, gravity=0.03, shrink=False)
                 )
         alive = []
+        probe = _WEATHER_PROBE
+        pad = 40
         for p in self.weather_particles:
             p.lifetime -= 1
             p.x += p.vx
             p.y += p.vy
             p.vy += p.gravity
-            if p.lifetime > 0 and view_rect.colliderect(pygame.Rect(int(p.x), int(p.y), 2, 2).inflate(40, 40)):
-                alive.append(p)
-            elif p.lifetime > 0 and biome == "snow" and p.y < view_rect.bottom + 40:
-                alive.append(p)
+            if p.lifetime > 0:
+                probe.x = int(p.x) - pad
+                probe.y = int(p.y) - pad
+                probe.width = pad * 2
+                probe.height = pad * 2
+                if view_rect.colliderect(probe):
+                    alive.append(p)
+                elif biome == "snow" and p.y < view_rect.bottom + pad:
+                    alive.append(p)
         self.weather_particles = alive[:cap]
 
     def _get_vignette(self, width, height, edge):

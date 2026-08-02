@@ -53,6 +53,16 @@ def app_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+def install_root(launcher_dir: Path, game_exe: str = "LegendaRubezha.exe") -> Path:
+    """Корень установки игры (LegendaRubezha.exe, save.json, updates/)."""
+    if (launcher_dir / game_exe).is_file():
+        return launcher_dir
+    parent = launcher_dir.parent
+    if (parent / game_exe).is_file():
+        return parent
+    return launcher_dir
+
+
 def parse_version(value: str) -> tuple[int, ...]:
     parts = []
     for piece in str(value).strip().split("."):
@@ -193,7 +203,8 @@ class LauncherApp:
         self.root.minsize(680, 560)
         self.root.configure(bg=COLORS["bg"])
 
-        self.base = app_dir()
+        self.launcher_dir = app_dir()
+        self.base = install_root(self.launcher_dir)
         self.config_path = self.base / "launcher_config.json"
         self.version_path = self.base / "version.json"
         self.config = self._load_config()
@@ -531,8 +542,9 @@ class LauncherApp:
         exe_name = self.config.get("game_exe", "LegendaRubezha.exe")
         candidates = [
             self.base / exe_name,
+            self.launcher_dir / exe_name,
             self.base / "LegendaRubezha" / exe_name,
-            self.base.parent / "LegendaRubezha" / exe_name,
+            self.launcher_dir.parent / "LegendaRubezha" / exe_name,
         ]
         game_path = next((p for p in candidates if p.is_file()), None)
         if not game_path:

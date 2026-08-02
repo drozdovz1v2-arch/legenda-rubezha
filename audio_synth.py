@@ -117,3 +117,36 @@ def build_sword_hit_sound():
     for freq in (420, 680, 920):
         _mix_tone(samples, freq, 0, int(SAMPLE_RATE * 0.08), 0.12, wave="triangle")
     return _to_stereo_buffer(samples)
+
+
+def build_enemy_death_sound():
+    """Короткий глухой удар при смерти врага."""
+    duration = 0.22
+    count = int(SAMPLE_RATE * duration)
+    samples = [0.0] * count
+    _mix_noise(samples, 0, int(SAMPLE_RATE * 0.08), 0.28, decay=0.82)
+    for freq in (120, 180, 260):
+        _mix_tone(samples, freq, 0, int(SAMPLE_RATE * 0.12), 0.14, wave="triangle")
+    return _to_stereo_buffer(samples)
+
+
+def build_coin_sound():
+    """Звон монеты / подбора предмета."""
+    duration = 0.18
+    count = int(SAMPLE_RATE * duration)
+    samples = [0.0] * count
+    for freq in (880, 1175, 1480):
+        _mix_tone(samples, freq, int(SAMPLE_RATE * 0.02), int(SAMPLE_RATE * 0.12), 0.11, wave="sine")
+    return _to_stereo_buffer(samples)
+
+
+def build_level_up_sound():
+    """Восходящий аккорд при повышении уровня."""
+    duration = 0.65
+    count = int(SAMPLE_RATE * duration)
+    samples = [0.0] * count
+    notes = (523, 659, 784, 988, 1175)
+    step = int(SAMPLE_RATE * 0.09)
+    for idx, freq in enumerate(notes):
+        _mix_tone(samples, freq, idx * step, int(SAMPLE_RATE * 0.22), 0.12, wave="sine", detune=0.002)
+    return _to_stereo_buffer(samples)

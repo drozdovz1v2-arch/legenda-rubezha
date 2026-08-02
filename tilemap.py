@@ -83,6 +83,13 @@ class Tile(pygame.sprite.Sprite):
 
         self.rect.y = y * TILE_SIZE
 
+        shape = TILE_COLLISION.get(tile_type)
+        if shape is None:
+            self.block_rect = self.rect
+        else:
+            ox, oy, w, h = shape
+            self.block_rect = pygame.Rect(self.rect.x + ox, self.rect.y + oy, w, h)
+
 
 
 
@@ -232,15 +239,7 @@ class TileMap:
 
     def collision_rect_for_tile(self, tile):
 
-        shape = TILE_COLLISION.get(tile.tile_type)
-
-        if shape is None:
-
-            return None
-
-        ox, oy, w, h = shape
-
-        return pygame.Rect(tile.rect.x + ox, tile.rect.y + oy, w, h)
+        return tile.block_rect
 
 
 
@@ -264,13 +263,7 @@ class TileMap:
 
                 tile = self.tile_grid[gy][gx]
 
-                block_rect = self.collision_rect_for_tile(tile)
-
-                if block_rect is None:
-
-                    block_rect = tile.rect
-
-                if rect.colliderect(block_rect):
+                if rect.colliderect(tile.block_rect):
 
                     return True
 
@@ -296,13 +289,7 @@ class TileMap:
 
                     tile = self.tile_grid[gy][gx]
 
-                    block_rect = self.collision_rect_for_tile(tile)
-
-                    if block_rect is None:
-
-                        block_rect = tile.rect
-
-                    if rect.colliderect(block_rect):
+                    if rect.colliderect(tile.block_rect):
 
                         yield tile
 
@@ -328,15 +315,9 @@ class TileMap:
 
                 tile = self.tile_grid[gy][gx]
 
-                block_rect = self.collision_rect_for_tile(tile)
+                if rect.colliderect(tile.block_rect):
 
-                if block_rect is None:
-
-                    block_rect = tile.rect
-
-                if rect.colliderect(block_rect):
-
-                    yield block_rect
+                    yield tile.block_rect
 
 
 

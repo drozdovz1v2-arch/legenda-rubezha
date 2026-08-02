@@ -28,8 +28,8 @@ if errorlevel 1 goto :fail
 
 echo.
 echo Готово!
-echo   installer\LegendaRubezha_Setup_beta_0.0.0.2.exe
-echo   dist\LegendaRubezhaLauncher.exe
+echo   installer\LegendaRubezha_Setup_beta_0.0.0.3.exe
+echo   dist\LegendaRubezhaLauncher\LegendaRubezhaLauncher.exe
 echo.
 echo Для автообновлений:
 echo   1. pack_update.bat — упаковать zip

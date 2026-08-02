@@ -4,9 +4,9 @@
 
 #define MyAppName "Легенда Рубежа"
 
-#define MyAppVersion "0.0.0.2"
+#define MyAppVersion "0.0.0.3"
 
-#define MyAppVersionName "beta 0.0.0.2"
+#define MyAppVersionName "beta 0.0.0.3"
 
 #define MyAppPublisher "Legenda Rubezha"
 
@@ -32,11 +32,15 @@ DefaultDirName={autopf}\Legenda Rubezha
 
 DefaultGroupName={#MyAppName}
 
+DisableDirPage=no
+
+AlwaysShowDirOnReadyPage=yes
+
 DisableProgramGroupPage=yes
 
 OutputDir=installer
 
-OutputBaseFilename=LegendaRubezha_Setup_beta_0.0.0.2
+OutputBaseFilename=LegendaRubezha_Setup_beta_0.0.0.3
 
 SetupIconFile=compiler:SetupClassicIcon.ico
 
@@ -80,7 +84,8 @@ Source: "dist\LegendaRubezha\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreve
 
 Source: "dist\LegendaRubezha\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-Source: "dist\{#MyLauncherExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\LegendaRubezhaLauncher\{#MyLauncherExeName}"; DestDir: "{app}\Launcher"; Flags: ignoreversion
+Source: "dist\LegendaRubezhaLauncher\_internal\*"; DestDir: "{app}\Launcher\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 Source: "updates\version.json"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -93,19 +98,19 @@ Source: "updates\github_repo.json"; DestDir: "{app}\updates"; Flags: ignoreversi
 
 [Icons]
 
-Name: "{group}\{#MyAppName} (лаунчер)"; Filename: "{app}\{#MyLauncherExeName}"
+Name: "{group}\{#MyAppName} (лаунчер)"; Filename: "{app}\Launcher\{#MyLauncherExeName}"
 
 Name: "{group}\{#MyAppName} (игра)"; Filename: "{app}\{#MyAppExeName}"
 
 Name: "{group}\Удалить {#MyAppName}"; Filename: "{uninstallexe}"
 
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyLauncherExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\Launcher\{#MyLauncherExeName}"; Tasks: desktopicon
 
 
 
 [Run]
 
-Filename: "{app}\{#MyLauncherExeName}"; Description: "Открыть лаунчер"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Launcher\{#MyLauncherExeName}"; Description: "Открыть лаунчер"; Flags: nowait postinstall skipifsilent
 
 
 

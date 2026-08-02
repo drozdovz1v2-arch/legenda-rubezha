@@ -711,17 +711,22 @@ class GameHUD:
             label_y -= 12
         return label_y
 
-    def draw_enemy_health_bars(self, screen, camera, enemies_group, mouse_pos=None):
+    def draw_enemy_health_bars(self, screen, camera, enemies_group, mouse_pos=None, view_rect=None):
         if not enemies_group:
             return
+        cull = view_rect.inflate(96, 96) if view_rect is not None else None
         hovered = None
         if mouse_pos:
             for enemy in enemies_group:
+                if cull is not None and not enemy.rect.colliderect(cull):
+                    continue
                 screen_pos = camera.apply(enemy)
                 if screen_pos.inflate(10, 12).collidepoint(mouse_pos):
                     hovered = enemy
                     break
         for enemy in enemies_group:
+            if cull is not None and not enemy.rect.colliderect(cull):
+                continue
             show_bar = (
                 enemy.__class__.__name__ in ("BlueBoss", "IceGuardian", "SandColossus")
                 or getattr(enemy, "is_elite", False)

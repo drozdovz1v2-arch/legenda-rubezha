@@ -66,6 +66,78 @@ RESOLUTIONS = [
     (1920, 1080), (2560, 1440), (3840, 2160),
 ]
 
+# Базовый список популярных разрешений (16:9, 16:10, 4:3, ultrawide)
+BASE_RESOLUTIONS = [
+    (640, 480), (720, 480), (800, 600), (1024, 768),
+    (1152, 864), (1280, 720), (1280, 800), (1280, 960), (1280, 1024),
+    (1360, 768), (1366, 768), (1440, 900), (1600, 900), (1680, 1050),
+    (1920, 1080), (1920, 1200), (2048, 1152), (2560, 1080), (2560, 1440),
+    (2560, 1600), (3440, 1440), (3840, 2160), (3840, 2400),
+    (5120, 1440), (5120, 2160),
+]
+
+
+def build_resolution_list():
+    """Собирает список разрешений: базовые + режимы монитора."""
+    import pygame
+
+    resolutions = list(BASE_RESOLUTIONS)
+    try:
+        info = pygame.display.Info()
+        if info.current_w >= 640 and info.current_h >= 480:
+            resolutions.append((info.current_w, info.current_h))
+        modes = pygame.display.list_modes()
+        if modes and modes != -1:
+            for mode in modes:
+                if isinstance(mode, (tuple, list)) and len(mode) >= 2:
+                    w, h = int(mode[0]), int(mode[1])
+                    if w >= 640 and h >= 480:
+                        resolutions.append((w, h))
+    except (pygame.error, TypeError, ValueError):
+        pass
+
+    seen = set()
+    unique = []
+    for w, h in resolutions:
+        key = (w, h)
+        if key not in seen:
+            seen.add(key)
+            unique.append(key)
+    unique.sort(key=lambda r: (r[0] * r[1], r[0]), reverse=True)
+    return unique or list(RESOLUTIONS)
+
+
+def resolve_res_index(resolutions, res_index, res_width=None, res_height=None):
+    """Находит индекс сохранённого разрешения или ближайший вариант."""
+    if res_width and res_height:
+        for i, (w, h) in enumerate(resolutions):
+            if w == res_width and h == res_height:
+                return i
+    if 0 <= res_index < len(resolutions):
+        return res_index
+    target = (1280, 720)
+    best = 0
+    best_diff = float("inf")
+    for i, (w, h) in enumerate(resolutions):
+        diff = abs(w - target[0]) + abs(h - target[1])
+        if diff < best_diff:
+            best_diff = diff
+            best = i
+    return best
+
+
+def format_resolution_label(width, height, desktop_size=None):
+    label = f"{width} × {height}"
+    if width == 3840 and height == 2160:
+        label += " (4K)"
+    elif width == 1920 and height == 1080:
+        label += " (FHD)"
+    elif width == 2560 and height == 1440:
+        label += " (QHD)"
+    elif desktop_size and (width, height) == desktop_size:
+        label += " (экран)"
+    return label
+
 SETTING_DEFAULTS = {
     "vol_master": 0.8,
     "vol_music": 0.5,

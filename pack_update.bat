@@ -3,7 +3,7 @@ chcp 65001 >nul
 cd /d "%~dp0"
 
 set "OUT=updates\packages"
-set "ZIP=%OUT%\LegendaRubezha_beta_0.0.0.2.zip"
+set "ZIP=%OUT%\LegendaRubezha_beta_0.0.0.3.zip"
 
 if not exist "dist\LegendaRubezha\LegendaRubezha.exe" (
   echo Сначала собери игру: pyinstaller --noconfirm LegendaRubezha.spec

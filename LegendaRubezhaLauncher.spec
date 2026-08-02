@@ -19,7 +19,7 @@ exe = EXE(
     pyz,
     a.scripts,
     [],
-    exclude_binaries=False,
+    exclude_binaries=True,
     name='LegendaRubezhaLauncher',
     debug=False,
     bootloader_ignore_signals=False,
@@ -31,4 +31,13 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='LegendaRubezhaLauncher',
 )
