@@ -66,3 +66,21 @@ def desert_allows_boss(tier):
 
 def desert_min_spawn_tier():
     return 1
+
+
+def same_biome(gx_a, gy_a, gx_b, gy_b, tilemap):
+    """Проверяет, что две клетки в одном биоме."""
+    return tilemap.biome_at(gx_a, gy_a) == tilemap.biome_at(gx_b, gy_b)
+
+
+def enemy_can_chase_player(enemy, player, tilemap):
+    """Враг не преследует игрока через границу биома."""
+    if not getattr(enemy, "leash_to_biome", True):
+        return True
+    from config import TILE_SIZE
+
+    egx = enemy.rect.centerx // TILE_SIZE
+    egy = enemy.rect.centery // TILE_SIZE
+    pgx = player.rect.centerx // TILE_SIZE
+    pgy = player.rect.centery // TILE_SIZE
+    return same_biome(egx, egy, pgx, pgy, tilemap)

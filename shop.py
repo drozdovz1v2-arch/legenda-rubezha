@@ -423,17 +423,27 @@ class WeaponShopUI:
             (card.x + 52, card.y + 50),
         )
 
+        if not owned and price > 0:
+            can_afford = game.player.gold >= price
+            price_color = (255, 230, 90) if can_afford else (210, 120, 100)
+            price_surf = self.font_section.render(f"{price} G", True, price_color)
+            price_x = card.right - price_surf.get_width() - 12
+            price_bg = pygame.Rect(price_x - 6, card.y + 8, price_surf.get_width() + 12, price_surf.get_height() + 4)
+            pygame.draw.rect(screen, (30, 28, 18), price_bg, border_radius=5)
+            pygame.draw.rect(screen, price_color, price_bg, 1, border_radius=5)
+            screen.blit(price_surf, (price_x, card.y + 10))
+
         if owned:
-            status = "НАДЕТО" if equipped else "КУПЛЕНО"
+            status = "НАДЕТО" if equipped else "НАДЕТЬ"
             status_color = (120, 255, 160) if equipped else (0, 200, 120)
         elif not unlocked:
             status = "Нужно: " + ", ".join(missing)
             status_color = (150, 130, 160)
         elif game.player.gold >= price:
-            status = f"Купить · {price} G"
+            status = "Купить"
             status_color = (255, 220, 80)
         else:
-            status = f"Нужно {price} G"
+            status = "Мало золота"
             status_color = (220, 100, 100)
 
         status_surf = self._clip_text(self.font_small, status, status_color, card.width - 120)

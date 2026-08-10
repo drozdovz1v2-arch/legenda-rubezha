@@ -173,6 +173,23 @@ def separate_from_entities(sprite, others, padding=2):
     return moved
 
 
+def apply_directional_knockback(sprite, origin_x, origin_y, force, tilemap, resist=0.0):
+    """Сдвигает спрайт от точки origin (например, от удара меча)."""
+    effective = force * (1.0 - max(0.0, min(1.0, float(resist))))
+    if effective < 0.5:
+        return
+    body = get_collision_rect(sprite)
+    dx = body.centerx - origin_x
+    dy = body.centery - origin_y
+    dist = math.hypot(dx, dy)
+    if dist < 1e-6:
+        dx, dy = 1.0, 0.0
+    else:
+        dx /= dist
+        dy /= dist
+    move_and_collide(sprite, dx * effective, dy * effective, tilemap)
+
+
 def separate_player_from_enemies(player, enemies, tilemap, padding=3):
     if separate_from_entities(player, enemies, padding=padding):
         _resolve_obstacle_axis(player, tilemap, "x")

@@ -80,6 +80,8 @@ class Enemy(pygame.sprite.Sprite):
         stats = ENEMY_DAMAGE["slime"]
         self.contact_damage = stats["contact"]
         self.contact_cooldown = stats["cooldown"]
+        self.leash_to_biome = True
+        self.knockback_resist = 0.0
         self._init_combat_state()
 
     def _init_combat_state(self):
@@ -193,6 +195,14 @@ class Enemy(pygame.sprite.Sprite):
             can_see = cached_line_of_sight(self, self.rect, player.rect, tilemap)
         else:
             can_see = False
+
+        from world_zones import enemy_can_chase_player
+        if not enemy_can_chase_player(self, player, tilemap):
+            can_see = False
+            if self.state in ("chase", "investigate"):
+                self.state = "patrol"
+                self.aggro_timer = 0
+                self.last_seen = None
 
         if self.dodge_timer > 0:
             self.dodge_timer -= 1
@@ -516,8 +526,7 @@ class IceGuardian(pygame.sprite.Sprite):
         stats = ENEMY_DAMAGE["ice_guardian"]
         self.contact_damage = stats["contact"]
         self.contact_cooldown = stats["cooldown"]
-
-    def take_damage(self, amount):
+        self.knockback_resist = 0.78
         self.hp -= amount
         flash_on_hit(self)
         if self.hp <= 0:
@@ -600,6 +609,7 @@ class BlueBoss(pygame.sprite.Sprite):
         stats = ENEMY_DAMAGE["blue_boss"]
         self.contact_damage = stats["contact"]
         self.contact_cooldown = stats["cooldown"]
+        self.knockback_resist = 0.78
 
     def take_damage(self, amount):
         self.hp -= amount
@@ -700,6 +710,7 @@ class SandColossus(pygame.sprite.Sprite):
         stats = ENEMY_DAMAGE["sand_colossus"]
         self.contact_damage = stats["contact"]
         self.contact_cooldown = stats["cooldown"]
+        self.knockback_resist = 0.82
 
     def take_damage(self, amount):
         self.hp -= amount

@@ -8,13 +8,14 @@ from ui_theme import draw_rounded_panel
 MODIFIERS = {
     "none": {
         "name": "Обычный",
-        "desc": "Без модификаторов",
+        "desc": "Без модификаторов · враги бьют реже",
         "color": (180, 190, 200),
         "enemy_mult": 1.0,
         "player_hp_mult": 1.0,
         "gold_mult": 1.0,
         "soul_mult": 1.0,
         "elite_bonus": 0.0,
+        "contact_cooldown_mult": 1.45,
     },
     "hard": {
         "name": "Жёсткий",
@@ -126,6 +127,7 @@ class RunModifierManager:
     def apply_to_difficulty(self, difficulty):
         spec = self.active
         difficulty.run_enemy_mult = spec.get("enemy_mult", 1.0)
+        difficulty.run_contact_cooldown_mult = spec.get("contact_cooldown_mult", 1.0)
 
     def to_dict(self):
         return {"active_id": self.active_id}

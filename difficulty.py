@@ -26,6 +26,8 @@ class DifficultyManager:
 
         self.run_speed_mult = 1.0
 
+        self.run_contact_cooldown_mult = 1.0
+
         self.event_damage_mult = 1.0
 
 
@@ -43,6 +45,8 @@ class DifficultyManager:
         self.run_enemy_mult = 1.0
 
         self.run_speed_mult = 1.0
+
+        self.run_contact_cooldown_mult = 1.0
 
         self.event_damage_mult = 1.0
 
@@ -191,9 +195,11 @@ class DifficultyManager:
 
         if hasattr(enemy, "contact_cooldown"):
 
+            cd_mult = max(1.0, float(getattr(self, "run_contact_cooldown_mult", 1.0)))
+
             enemy.contact_cooldown = max(
 
-                16, int(enemy.contact_cooldown * (1.0 - min(0.20, (mult - 1.0) * 0.10)))
+                16, int(enemy.contact_cooldown * (1.0 - min(0.20, (mult - 1.0) * 0.10)) * cd_mult)
 
             )
 

@@ -19,6 +19,7 @@ from combat import angle_to_facing, facing_to_angle, compute_aim_angle
 ATTACK_DURATION = 20
 ATTACK_PHASES = 5
 ATTACK_HIT_PHASE = 2
+ATTACK_MOVE_MULT = 0.62
 WALK_FRAME_DELAY = 7
 BASE_ATTACK_COOLDOWN = 25
 BASE_DASH_COOLDOWN = 45
@@ -330,10 +331,16 @@ class Player(pygame.sprite.Sprite):
                 self.is_attacking = False
         if self.is_dashing:
             self._update_dash(tilemap)
-        elif not self.is_attacking:
-            move_and_collide(self, self.change_x, self.change_y, tilemap)
-            self._update_dash(tilemap)
         else:
+            if self.is_attacking:
+                move_and_collide(
+                    self,
+                    int(self.change_x * ATTACK_MOVE_MULT),
+                    int(self.change_y * ATTACK_MOVE_MULT),
+                    tilemap,
+                )
+            else:
+                move_and_collide(self, self.change_x, self.change_y, tilemap)
             self._update_dash(tilemap)
 
         self._update_animation()

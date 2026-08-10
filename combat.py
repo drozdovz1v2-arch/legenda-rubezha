@@ -40,6 +40,9 @@ def try_contact_hit(player, enemy, damage, cooldown_frames, can_see=True):
 
 ATTACK_ARC = math.radians(62)
 SNAP_SCREEN_RADIUS = 56
+SWORD_KNOCKBACK_BASE = 8
+SWORD_KNOCKBACK_RANGE_SCALE = 0.14
+SWORD_KNOCKBACK_CRIT_MULT = 1.4
 
 _AIM_CONE_CACHE = {"size": None, "surface": None}
 _SWING_SURF_CACHE = {"size": 0, "surface": None}
@@ -124,6 +127,28 @@ def find_attack_targets(player, aim_angle, enemies_group, tilemap):
 
 def preview_targets(player, aim_angle, enemies_group, tilemap):
     return find_attack_targets(player, aim_angle, enemies_group, tilemap)
+
+
+def sword_knockback_force(player, is_crit=False):
+    force = SWORD_KNOCKBACK_BASE + getattr(player, "attack_range", 40) * SWORD_KNOCKBACK_RANGE_SCALE
+    if is_crit:
+        force *= SWORD_KNOCKBACK_CRIT_MULT
+    return force
+
+
+def apply_sword_knockback(player, enemy, tilemap, is_crit=False):
+    from collision import apply_directional_knockback
+
+    force = sword_knockback_force(player, is_crit)
+    resist = getattr(enemy, "knockback_resist", 0.0)
+    apply_directional_knockback(
+        enemy,
+        player.rect.centerx,
+        player.rect.centery,
+        force,
+        tilemap,
+        resist=resist,
+    )
 
 
 def snap_aim_angle(player, mouse_world_x, mouse_world_y, enemies_group, camera, mouse_screen_pos):

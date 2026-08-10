@@ -101,6 +101,7 @@ class MetaProgression:
         self.best_kills = 0
         self.best_wave = 0
         self.total_souls_earned = 0
+        self.intro_seen = False
 
     def reset_session(self):
         pass
@@ -178,6 +179,7 @@ class MetaProgression:
             "best_kills": self.best_kills,
             "best_wave": self.best_wave,
             "total_souls_earned": self.total_souls_earned,
+            "intro_seen": self.intro_seen,
         }
 
     def load_dict(self, data):
@@ -192,3 +194,4 @@ class MetaProgression:
         self.best_kills = int(data.get("best_kills", 0))
         self.best_wave = int(data.get("best_wave", 0))
         self.total_souls_earned = int(data.get("total_souls_earned", 0))
+        self.intro_seen = bool(data.get("intro_seen", False))

@@ -22,7 +22,7 @@ from loot import Potion
 from chests import Chest
 from audio_manager import AudioManager
 from collision import resolve_group_separation, separate_player_from_enemies
-from combat import find_attack_targets, draw_attack_aim, draw_attack_swing, draw_attack_sword_overlay, update_player_aim, draw_crosshair
+from combat import find_attack_targets, draw_attack_aim, draw_attack_swing, draw_attack_sword_overlay, update_player_aim, draw_crosshair, apply_sword_knockback
 from ui_theme import (
     AnimatedBackground,
     draw_menu_button,
@@ -1312,7 +1312,21 @@ class Game:
         spec = self.run_mods.active
         self._run_day_speed_mult = spec.get("day_speed_mult", 1.0)
         self._rescale_all_enemies()
-        self.start_with_intro()
+        if getattr(self.meta, "intro_seen", False):
+            self.enter_playing(
+                SPAWN_IFRAMES_NEW,
+                f"Неуязвимость {SPAWN_IFRAMES_NEW // 60} сек — удачи!",
+            )
+        else:
+            self.start_with_intro()
+
+    def finish_intro(self):
+        self.meta.intro_seen = True
+        self.save_game()
+        self.enter_playing(
+            SPAWN_IFRAMES_NEW,
+            f"Неуязвимость {SPAWN_IFRAMES_NEW // 60} сек — удачи!",
+        )
 
     def draw_menu(self):
         self.menu_bg.draw(self.screen, self.current_w, self.current_h)
@@ -1477,6 +1491,7 @@ class Game:
             freeze_chance = getattr(self.player, "relic_freeze_chance", 0)
             if freeze_chance and random.random() < freeze_chance and hasattr(enemy, "status"):
                 enemy.status.apply("freeze", 60, 1)
+            apply_sword_knockback(self.player, enemy, self.tilemap, is_crit=is_crit)
             killed = enemy.take_damage(damage)
             if self.player.lifesteal_percent > 0 and not killed:
                 steal = max(1, int(damage * self.player.lifesteal_percent))
@@ -2093,10 +2108,7 @@ class Game:
                 elif self.state == "INTRO":
                     result = self.intro.handle_event(event)
                     if result == "done":
-                        self.enter_playing(
-                            SPAWN_IFRAMES_NEW,
-                            f"Неуязвимость {SPAWN_IFRAMES_NEW // 60} сек — удачи!",
-                        )
+                        self.finish_intro()
                 elif self.state == "FINALE":
                     result = self.finale.handle_event(event)
                     if result == "done":
