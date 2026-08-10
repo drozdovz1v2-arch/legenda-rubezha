@@ -1,4 +1,4 @@
-"""Лаунчер «Легенда Рубежа» — проверка обновлений, changelog, запуск игры."""
+"""Лаунчер игр «Рубеж» — проверка обновлений, changelog, запуск."""
 
 from __future__ import annotations
 
@@ -19,7 +19,21 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk
 
-GAME_TITLE = "Легенда Рубежа"
+LAUNCHER_TITLE = "Рубеж — Лаунчер"
+GAME_TITLE = LAUNCHER_TITLE
+
+DEFAULT_GAMES_CATALOG = {
+    "launcher_title": LAUNCHER_TITLE,
+    "default_game_id": "legenda",
+    "games": [
+        {
+            "id": "legenda",
+            "title": "Легенда Рубежа",
+            "game_exe": "LegendaRubezha.exe",
+            "install_dir": ".",
+        }
+    ],
+}
 
 DEFAULT_CONFIG = {
     "manifest_url": "https://raw.githubusercontent.com/USER/REPO/main/updates/manifest.json",
@@ -55,13 +69,87 @@ def app_dir() -> Path:
 
 
 def install_root(launcher_dir: Path, game_exe: str = "LegendaRubezha.exe") -> Path:
-    """Корень установки игры (LegendaRubezha.exe, save.json, updates/)."""
+    """Корень установки (LegendaRubezha.exe / папка с играми, updates/)."""
     if (launcher_dir / game_exe).is_file():
         return launcher_dir
     parent = launcher_dir.parent
     if (parent / game_exe).is_file():
         return parent
     return launcher_dir
+
+
+def game_install_base(root: Path, install_dir: str) -> Path:
+    install_dir = (install_dir or ".").strip().replace("\\", "/")
+    if install_dir in (".", ""):
+        return root
+    return root / install_dir
+
+
+def is_launch_only_entry(entry: dict) -> bool:
+    return bool(entry.get("launch_only") or entry.get("external"))
+
+
+def expand_path_template(path_str: str) -> Path:
+    normalized = str(path_str or "").strip().replace("/", os.sep)
+    return Path(os.path.expandvars(os.path.expanduser(normalized)))
+
+
+def collect_game_exe_candidates(entry: dict, base: Path, root_base: Path, launcher_dir: Path) -> list[Path]:
+    exe_name = entry.get("game_exe") or "LegendaRubezha.exe"
+    install_dir = entry.get("install_dir", ".")
+    candidates: list[Path] = [
+        base / exe_name,
+        root_base / exe_name,
+        launcher_dir / exe_name,
+    ]
+    if install_dir not in (".", ""):
+        candidates.extend([
+            base / install_dir / exe_name,
+            root_base / install_dir / exe_name,
+            launcher_dir / install_dir / exe_name,
+        ])
+    candidates.extend([
+        root_base / "LegendaRubezha" / exe_name,
+        launcher_dir.parent / "LegendaRubezha" / exe_name,
+    ])
+    for raw in entry.get("exe_search_paths") or []:
+        candidates.append(expand_path_template(raw))
+    for rel in entry.get("extra_exe_paths") or []:
+        rel_path = str(rel).replace("\\", "/")
+        candidates.append((launcher_dir / rel_path).resolve())
+        candidates.append((root_base / rel_path).resolve())
+    for rel in entry.get("dev_dirs") or []:
+        candidates.append((launcher_dir / rel).resolve() / "dist" / "win-unpacked" / exe_name)
+        candidates.append((root_base / rel).resolve() / "dist" / "win-unpacked" / exe_name)
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(path)
+    return unique
+
+
+def load_games_catalog(base: Path) -> dict:
+    path = base / "updates" / "games.json"
+    catalog = read_json(path, DEFAULT_GAMES_CATALOG)
+    if not catalog.get("games"):
+        catalog["games"] = list(DEFAULT_GAMES_CATALOG["games"])
+    catalog.setdefault("launcher_title", LAUNCHER_TITLE)
+    catalog.setdefault("default_game_id", "legenda")
+    return catalog
+
+
+def game_config_from_entry(entry: dict) -> dict:
+    cfg = dict(DEFAULT_CONFIG)
+    cfg["game_exe"] = entry.get("game_exe", cfg["game_exe"])
+    if entry.get("manifest_url"):
+        cfg["manifest_url"] = entry["manifest_url"]
+    if entry.get("fallback_manifest"):
+        cfg["fallback_manifest"] = entry["fallback_manifest"]
+    return cfg
 
 
 def parse_version(value: str) -> tuple[int, ...]:
@@ -98,7 +186,7 @@ def write_json(path: Path, data: dict) -> None:
 def resolve_manifest_url(config: dict, base: Path) -> str:
     url = (config.get("manifest_url") or "").strip()
     placeholders = ("YOUR_GITHUB_USERNAME", "USER/REPO", "YOUR_GITHUB")
-    if any(p in url for p in placeholders):
+    if any(p in url for p in placeholders) or not url:
         gh = read_json(base / "updates" / "github_repo.json", {})
         owner = str(gh.get("owner", "")).strip()
         repo = str(gh.get("repo", "")).strip()
@@ -349,16 +437,20 @@ def apply_update_zip(zip_path: Path, target_dir: Path, progress_cb, game_exe: st
 class LauncherApp:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title(f"{GAME_TITLE} — Лаунчер")
-        self.root.geometry("760x620")
-        self.root.minsize(680, 560)
+        self.root.title(LAUNCHER_TITLE)
+        self.root.geometry("760x660")
+        self.root.minsize(680, 600)
         self.root.configure(bg=COLORS["bg"])
 
         self.launcher_dir = app_dir()
-        self.base = install_root(self.launcher_dir)
-        self.config_path = self.base / "launcher_config.json"
-        self.version_path = self.base / "version.json"
+        self.root_base = install_root(self.launcher_dir)
+        self.config_path = self.root_base / "launcher_config.json"
+        self.games_catalog = load_games_catalog(self.root_base)
+        self.games = self.games_catalog.get("games") or []
+        self.selected_game = self._default_game_entry()
+        self.base = game_install_base(self.root_base, self.selected_game.get("install_dir", "."))
         self.config = self._load_config()
+        self.version_path = self.base / "version.json"
         self.local_version = read_json(self.version_path, DEFAULT_VERSION)
         self.manifest = None
         self.latest = None
@@ -366,21 +458,56 @@ class LauncherApp:
         self._busy = False
         self._deferred_restart = False
 
+        self.root.title(f"{self.selected_game.get('title', LAUNCHER_TITLE)} — Лаунчер")
+
         self._build_ui()
         pending = apply_pending_updates(self.base)
         if pending:
             self._pending_applied = pending
-        if self.config.get("auto_check_updates", True):
-            self.root.after(400, self.check_updates)
+        self._apply_selected_game(self.selected_game)
+
+    def _default_game_entry(self) -> dict:
+        default_id = self.games_catalog.get("default_game_id", "legenda")
+        for entry in self.games:
+            if entry.get("id") == default_id:
+                return entry
+        if self.games:
+            return self.games[0]
+        return DEFAULT_GAMES_CATALOG["games"][0]
+
+    def _apply_selected_game(self, entry: dict) -> None:
+        self.selected_game = entry
+        self.base = game_install_base(self.root_base, entry.get("install_dir", "."))
+        self.config = self._load_config()
+        self.version_path = self.base / "version.json"
+        self.local_version = read_json(self.version_path, DEFAULT_VERSION)
+        self.manifest = None
+        self.latest = None
+        self.update_available = False
+        self.update_btn.configure(state="disabled")
+        self.version_label.configure(text=self._version_text())
+        title = entry.get("title", LAUNCHER_TITLE)
+        self.root.title(f"{title} — Лаунчер")
+        self._refresh_action_labels()
+        self._set_changelog(self._local_changelog_fallback())
+        self._set_status("Выберите «Проверить обновления» или дождитесь автопроверки.", COLORS["muted"])
+        if is_launch_only_entry(entry):
+            self.root.after(200, self._on_launch_only_loaded)
+        elif self.config.get("auto_check_updates", True):
+            self.root.after(200, self.check_updates)
 
     def _load_config(self) -> dict:
+        entry_cfg = game_config_from_entry(self.selected_game)
         if not self.config_path.is_file():
-            bundled = self.base / "updates" / "launcher_config.json"
+            bundled = self.root_base / "updates" / "launcher_config.json"
             if bundled.is_file():
                 write_json(self.config_path, read_json(bundled, DEFAULT_CONFIG))
             else:
-                write_json(self.config_path, DEFAULT_CONFIG)
+                write_json(self.config_path, entry_cfg)
         cfg = read_json(self.config_path, DEFAULT_CONFIG)
+        for key, value in entry_cfg.items():
+            if value:
+                cfg[key] = value
         for key, value in DEFAULT_CONFIG.items():
             cfg.setdefault(key, value)
         cfg["manifest_url"] = resolve_manifest_url(cfg, self.base)
@@ -395,11 +522,34 @@ class LauncherApp:
         header.pack(fill="x", padx=24, pady=(20, 8))
         tk.Label(
             header,
-            text=GAME_TITLE,
+            text=self.games_catalog.get("launcher_title", LAUNCHER_TITLE),
             font=("Segoe UI", 22, "bold"),
             fg=COLORS["accent"],
             bg=COLORS["bg"],
         ).pack(anchor="w")
+
+        if len(self.games) > 1:
+            picker = tk.Frame(header, bg=COLORS["bg"])
+            picker.pack(anchor="w", pady=(8, 0))
+            tk.Label(
+                picker,
+                text="Проект:",
+                font=("Segoe UI", 10),
+                fg=COLORS["muted"],
+                bg=COLORS["bg"],
+            ).pack(side="left")
+            titles = [g.get("title", g.get("id", "?")) for g in self.games]
+            self.game_var = tk.StringVar(value=self.selected_game.get("title", titles[0]))
+            self.game_combo = ttk.Combobox(
+                picker,
+                textvariable=self.game_var,
+                values=titles,
+                state="readonly",
+                width=34,
+            )
+            self.game_combo.pack(side="left", padx=(8, 0))
+            self.game_combo.bind("<<ComboboxSelected>>", self._on_game_selected)
+
         self.status_label = tk.Label(
             header,
             text="",
@@ -494,6 +644,16 @@ class LauncherApp:
 
         self._set_changelog(self._local_changelog_fallback())
 
+    def _on_game_selected(self, _event=None):
+        if self._busy:
+            return
+        title = self.game_var.get()
+        for entry in self.games:
+            if entry.get("title") == title:
+                if entry.get("id") != self.selected_game.get("id"):
+                    self._apply_selected_game(entry)
+                break
+
     def _version_text(self) -> str:
         name = self.local_version.get("version_name", "?")
         ver = self.local_version.get("version", "?")
@@ -504,9 +664,9 @@ class LauncherApp:
         return line
 
     def _local_changelog_fallback(self) -> str:
+        game = self.selected_game.get("title", "игра")
         return (
-            "Лаунчер проверит обновления и покажет список изменений,\n"
-            "баланс и новые функции для каждой версии.\n\n"
+            f"Лаунчер проверит обновления для «{game}» и покажет список изменений.\n\n"
             "Нажмите «Проверить обновления» или дождитесь автопроверки."
         )
 
@@ -515,6 +675,54 @@ class LauncherApp:
         self.changelog_box.delete("1.0", "end")
         self.changelog_box.insert("1.0", text)
         self.changelog_box.configure(state="disabled")
+
+    def _refresh_action_labels(self):
+        if is_launch_only_entry(self.selected_game):
+            self.play_btn.configure(text="▶  ЗАПУСТИТЬ")
+            self.check_btn.configure(state="disabled")
+        else:
+            self.play_btn.configure(text="▶  ИГРАТЬ")
+            self.check_btn.configure(state="normal")
+
+    def _find_game_executable(self) -> Path | None:
+        entry = self.selected_game
+        candidates = collect_game_exe_candidates(
+            entry,
+            self.base,
+            self.root_base,
+            self.launcher_dir,
+        )
+        return next((p for p in candidates if p.is_file()), None)
+
+    def _launch_only_version_text(self) -> str:
+        game_path = self._find_game_executable()
+        if game_path:
+            return f"Найден: {game_path.name}\nПапка: {game_path.parent}"
+        title = self.selected_game.get("title", "Приложение")
+        install_dir = self.selected_game.get("install_dir", ".")
+        folder = install_dir if install_dir not in (".", "") else "MiniDiscord"
+        return (
+            f"{title} не найден.\n"
+            f"Установи с GitHub или положи exe в папку {folder}\\"
+        )
+
+    def _on_launch_only_loaded(self):
+        self._set_busy(False)
+        self.manifest = None
+        self.latest = None
+        self.update_available = False
+        self.update_btn.configure(state="disabled")
+        title = self.selected_game.get("title", "Приложение")
+        game_path = self._find_game_executable()
+        if game_path:
+            self._set_status(f"{title} готов к запуску", COLORS["ok"])
+        else:
+            self._set_status(f"{title} не установлен", COLORS["accent"])
+        desc = self.selected_game.get("description") or (
+            f"{title} запускается отдельно.\nОбновления — внутри самого приложения."
+        )
+        self._set_changelog(desc)
+        self.version_label.configure(text=self._launch_only_version_text())
 
     def _set_status(self, text: str, color=None):
         self.status_label.configure(text=text, fg=color or COLORS["muted"])
@@ -536,6 +744,9 @@ class LauncherApp:
 
     def check_updates(self):
         if self._busy:
+            return
+        if is_launch_only_entry(self.selected_game):
+            self._on_launch_only_loaded()
             return
         self._set_busy(True)
         self._set_status("Проверяем обновления…", COLORS["accent2"])
@@ -750,26 +961,47 @@ class LauncherApp:
     def launch_game(self):
         if self._busy:
             return
-        exe_name = self.config.get("game_exe", "LegendaRubezha.exe")
-        candidates = [
-            self.base / exe_name,
-            self.launcher_dir / exe_name,
-            self.base / "LegendaRubezha" / exe_name,
-            self.launcher_dir.parent / "LegendaRubezha" / exe_name,
-        ]
-        game_path = next((p for p in candidates if p.is_file()), None)
-        if not game_path:
-            messagebox.showerror(
-                GAME_TITLE,
-                f"Не найден {exe_name}.\n"
-                "Положите лаунчер в папку с игрой или переустановите игру.",
-            )
+        entry = self.selected_game
+        game_path = self._find_game_executable()
+        if game_path:
+            try:
+                subprocess.Popen([str(game_path)], cwd=str(game_path.parent))
+                if is_launch_only_entry(entry):
+                    title = entry.get("title", "Приложение")
+                    self._set_status(f"{title} запущен", COLORS["ok"])
+                    return
+                self.root.destroy()
+            except OSError as exc:
+                messagebox.showerror(GAME_TITLE, f"Не удалось запустить игру:\n{exc}")
             return
-        try:
-            subprocess.Popen([str(game_path)], cwd=str(game_path.parent))
-            self.root.destroy()
-        except OSError as exc:
-            messagebox.showerror(GAME_TITLE, f"Не удалось запустить игру:\n{exc}")
+
+        exe_name = entry.get("game_exe") or self.config.get("game_exe", "LegendaRubezha.exe")
+        install_dir = entry.get("install_dir", ".")
+        dev_script = (entry.get("dev_script") or "").strip()
+        if dev_script:
+            dev_candidates = [self.base / dev_script, self.root_base / dev_script]
+            for rel in entry.get("dev_dirs") or []:
+                dev_candidates.append((self.launcher_dir / rel).resolve() / dev_script)
+                dev_candidates.append((self.root_base / rel).resolve() / dev_script)
+            script_path = next((p for p in dev_candidates if p.is_file()), None)
+            if script_path:
+                try:
+                    subprocess.Popen(
+                        [sys.executable, str(script_path)],
+                        cwd=str(script_path.parent),
+                    )
+                    self.root.destroy()
+                except OSError as exc:
+                    messagebox.showerror(GAME_TITLE, f"Не удалось запустить игру:\n{exc}")
+                return
+
+        title = entry.get("title", "игра")
+        messagebox.showerror(
+            GAME_TITLE,
+            f"Не найден {exe_name} для «{title}».\n\n"
+            "Установите игру через обновление лаунчера или положите exe в папку "
+            f"{install_dir if install_dir not in ('.', '') else 'с лаунчером'}.",
+        )
 
     def run(self):
         self.root.mainloop()

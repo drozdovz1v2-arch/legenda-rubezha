@@ -68,6 +68,7 @@ jobs:
           Copy-Item updates/version.json $stage -Force
           Copy-Item updates/manifest.json "$stage/updates/" -Force
           Copy-Item updates/github_repo.json "$stage/updates/" -Force
+          Copy-Item updates/games.json "$stage/updates/" -Force
           Copy-Item updates/КАК_УСТАНОВИТЬ.txt $stage -Force
 
           $updateStage = "dist/update_package"
@@ -78,6 +79,7 @@ jobs:
           Copy-Item updates/launcher_config.json $updateStage -Force
           Copy-Item updates/manifest.json "$updateStage/updates/" -Force
           Copy-Item updates/github_repo.json "$updateStage/updates/" -Force
+          Copy-Item updates/games.json "$updateStage/updates/" -Force
 
           Compress-Archive -Path "$updateStage/*" -DestinationPath "updates/packages/$zip" -Force
           Compress-Archive -Path "$stage/*" -DestinationPath "updates/packages/$friendZip" -Force

@@ -22,6 +22,7 @@ xcopy /E /I /Y "dist\LegendaRubezha\*" "%STAGE%\"
 copy /Y "updates\launcher_config.json" "%STAGE%\"
 copy /Y "updates\manifest.json" "%STAGE%\updates\"
 copy /Y "updates\github_repo.json" "%STAGE%\updates\"
+copy /Y "updates\games.json" "%STAGE%\updates\"
 
 powershell -NoProfile -Command "Compress-Archive -Path '%STAGE%\*' -DestinationPath '%ZIP%' -Force"
 

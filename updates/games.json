@@ -1,0 +1,40 @@
+{
+  "launcher_title": "Рубеж — Лаунчер",
+  "default_game_id": "legenda",
+  "games": [
+    {
+      "id": "legenda",
+      "title": "Легенда Рубежа",
+      "game_exe": "LegendaRubezha.exe",
+      "install_dir": ".",
+      "manifest_url": "https://raw.githubusercontent.com/drozdovz1v2-arch/legenda-rubezha/main/updates/manifest.json",
+      "fallback_manifest": "./updates/manifest.json"
+    },
+    {
+      "id": "glubiny",
+      "title": "Глубины Рубежа",
+      "game_exe": "GlubinyRubezha.exe",
+      "install_dir": "GlubinyRubezha",
+      "manifest_url": "https://raw.githubusercontent.com/drozdovz1v2-arch/glubiny-rubezha/main/updates/manifest.json",
+      "fallback_manifest": "./GlubinyRubezha/updates/manifest.json",
+      "dev_script": "main.py",
+      "dev_dirs": ["../glubiny-rubezha", "../../glubiny-rubezha"]
+    },
+    {
+      "id": "minidiscord",
+      "title": "MiniDiscord",
+      "game_exe": "MiniDiscord.exe",
+      "install_dir": "MiniDiscord",
+      "launch_only": true,
+      "description": "Голосовой чат и демонстрация экрана для друзей через Radmin VPN.\n\nСкачать: github.com/drozdovz1v2-arch/minidiscord/releases\nОбновления — автоматически при запуске MiniDiscord.\nПеред запуском включи Radmin VPN.",
+      "exe_search_paths": [
+        "%LOCALAPPDATA%/Programs/MiniDiscord/MiniDiscord.exe",
+        "%LOCALAPPDATA%/Programs/minidiscord/MiniDiscord.exe"
+      ],
+      "extra_exe_paths": [
+        "../wq/dist/win-unpacked/MiniDiscord.exe",
+        "../../wq/dist/win-unpacked/MiniDiscord.exe"
+      ]
+    }
+  ]
+}

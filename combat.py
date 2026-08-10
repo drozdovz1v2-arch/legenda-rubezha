@@ -43,7 +43,6 @@ SNAP_SCREEN_RADIUS = 56
 
 _AIM_CONE_CACHE = {"size": None, "surface": None}
 _SWING_SURF_CACHE = {"size": 0, "surface": None}
-_TRAIL_SURF_CACHE = {"size": 0, "surface": None}
 
 
 def _get_fullscreen_alpha_cache(cache, size):
@@ -274,36 +273,13 @@ def _sword_swing_offset(progress):
 
 
 def draw_attack_sword_overlay(screen, camera, player):
-    """Динамический меч по углу прицела во время атаки."""
+    """Динамическое оружие по углу прицела во время атаки."""
     if not player.is_attacking:
         return
-    from player_visuals import get_weapon_style
+    from player_visuals import draw_weapon_strike, get_weapon_style
 
     style = get_weapon_style(getattr(player, "weapon_name", ""))
     progress = player.swing_progress()
     cx, cy = camera.apply_pos(player.rect.centerx, player.rect.centery)
     sword_angle = player.aim_angle + _sword_swing_offset(progress)
-    blade_len = style["blade_len"] + int(8 * math.sin(progress * math.pi))
-    grip_dist = 7
-    hx = cx + math.cos(sword_angle - 0.35) * grip_dist
-    hy = cy + math.sin(sword_angle - 0.35) * grip_dist
-    tx = cx + math.cos(sword_angle) * (grip_dist + blade_len)
-    ty = cy + math.sin(sword_angle) * (grip_dist + blade_len)
-    pygame.draw.line(screen, style["handle"], (cx, cy), (hx, hy), 3)
-    pygame.draw.line(screen, style["blade"], (hx, hy), (tx, ty), 5)
-    pygame.draw.line(screen, style["edge"], (hx, hy), (tx, ty), 1)
-    if progress > 0.28 and progress < 0.72:
-        trail_size = blade_len + 20
-        if _TRAIL_SURF_CACHE["size"] != trail_size or _TRAIL_SURF_CACHE["surface"] is None:
-            _TRAIL_SURF_CACHE["size"] = trail_size
-            _TRAIL_SURF_CACHE["surface"] = pygame.Surface((trail_size, trail_size), pygame.SRCALPHA)
-        trail = _TRAIL_SURF_CACHE["surface"]
-        trail.fill((0, 0, 0, 0))
-        local_c = (trail.get_width() // 2, trail.get_height() // 2)
-        trail_end = (
-            local_c[0] + math.cos(sword_angle) * blade_len,
-            local_c[1] + math.sin(sword_angle) * blade_len,
-        )
-        trail_color = (*style["swing"], 90)
-        pygame.draw.line(trail, trail_color, local_c, trail_end, 8)
-        screen.blit(trail, (tx - local_c[0], ty - local_c[1]))
+    draw_weapon_strike(screen, cx, cy, sword_angle, style, progress)
