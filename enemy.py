@@ -527,6 +527,8 @@ class IceGuardian(pygame.sprite.Sprite):
         self.contact_damage = stats["contact"]
         self.contact_cooldown = stats["cooldown"]
         self.knockback_resist = 0.78
+
+    def take_damage(self, amount):
         self.hp -= amount
         flash_on_hit(self)
         if self.hp <= 0:
