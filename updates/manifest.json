@@ -1,27 +1,18 @@
 {
   "latest": {
-    "version": "0.0.0.8",
-    "version_name": "beta 0.0.0.8",
+    "version": "0.0.0.9",
+    "version_name": "beta 0.0.0.9",
     "release_date": "2026-08-10",
-    "download_url": "https://github.com/drozdovz1v2-arch/legenda-rubezha/releases/download/v0.0.0.8/LegendaRubezha_beta_0.0.0.8.zip",
+    "download_url": "https://github.com/drozdovz1v2-arch/legenda-rubezha/releases/download/v0.0.0.9/LegendaRubezha_beta_0.0.0.9.zip",
     "sha256": "",
     "changelog": {
-      "summary": "Лаунчер: обновления для всех игр из одного окна",
+      "summary": "Исправлен краш при старте нового забега",
       "sections": [
         {
-          "title": "Лаунчер",
+          "title": "Исправления",
           "items": [
-            "Автоматически подставляет games.json, если его не было",
-            "Создаёт папку игры перед первым обновлением (Глубины Рубежа)",
-            "Список: Легенда, Глубины Рубежа, MiniDiscord",
-            "Скачай LegendaRubezhaLauncher.exe из релиза, если лаунчер старый"
-          ]
-        },
-        {
-          "title": "Как обновить Глубины Рубежа",
-          "items": [
-            "Выбери «Глубины Рубежа» в списке → Проверить обновления → Обновить",
-            "Игра установится в папку GlubinyRubezha рядом с лаунчером"
+            "Починен Ледяной страж — игра больше не падает при создании мира",
+            "Восстановлен метод take_damage у босса IceGuardian"
           ]
         }
       ]
@@ -29,20 +20,21 @@
   },
   "history": [
     {
+      "version": "0.0.0.8",
+      "version_name": "beta 0.0.0.8",
+      "release_date": "2026-08-10",
+      "changelog": {
+        "summary": "Лаунчер: обновления для всех игр из одного окна",
+        "sections": []
+      }
+    },
+    {
       "version": "0.0.0.7",
       "version_name": "beta 0.0.0.7",
       "release_date": "2026-08-10",
       "changelog": {
         "summary": "Бой, магазин и качество жизни",
-        "sections": [
-          {
-            "title": "Бой",
-            "items": [
-              "Отталкивание врагов ударом меча",
-              "Можно двигаться во время атаки"
-            ]
-          }
-        ]
+        "sections": []
       }
     },
     {
