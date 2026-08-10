@@ -4,7 +4,7 @@
     "version_name": "beta 0.0.0.9",
     "release_date": "2026-08-10",
     "download_url": "https://github.com/drozdovz1v2-arch/legenda-rubezha/releases/download/v0.0.0.9/LegendaRubezha_beta_0.0.0.9.zip",
-    "sha256": "",
+    "sha256": "00fb67aa7a067accdd37dedc01c709c21008125ff67796998e254c24b7d4f125",
     "changelog": {
       "summary": "Исправлен краш при старте нового забега",
       "sections": [
