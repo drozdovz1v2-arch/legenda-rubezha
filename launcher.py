@@ -132,6 +132,22 @@ def collect_game_exe_candidates(entry: dict, base: Path, root_base: Path, launch
     return unique
 
 
+def bootstrap_games_catalog(root_base: Path, launcher_dir: Path) -> None:
+    """Копирует updates/games.json в корень установки, если его ещё нет."""
+    target = root_base / "updates" / "games.json"
+    if target.is_file():
+        return
+    sources = [
+        launcher_dir / "updates" / "games.json",
+        root_base / "Launcher" / "updates" / "games.json",
+    ]
+    for src in sources:
+        if src.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, target)
+            return
+
+
 def load_games_catalog(base: Path) -> dict:
     path = base / "updates" / "games.json"
     catalog = read_json(path, DEFAULT_GAMES_CATALOG)
@@ -140,6 +156,11 @@ def load_games_catalog(base: Path) -> dict:
     catalog.setdefault("launcher_title", LAUNCHER_TITLE)
     catalog.setdefault("default_game_id", "legenda")
     return catalog
+
+
+def ensure_game_install_dir(base: Path) -> None:
+    base.mkdir(parents=True, exist_ok=True)
+    (base / "updates").mkdir(parents=True, exist_ok=True)
 
 
 def game_config_from_entry(entry: dict) -> dict:
@@ -444,6 +465,7 @@ class LauncherApp:
 
         self.launcher_dir = app_dir()
         self.root_base = install_root(self.launcher_dir)
+        bootstrap_games_catalog(self.root_base, self.launcher_dir)
         self.config_path = self.root_base / "launcher_config.json"
         self.games_catalog = load_games_catalog(self.root_base)
         self.games = self.games_catalog.get("games") or []
@@ -899,12 +921,14 @@ class LauncherApp:
                     def install_progress(ratio):
                         self.root.after(0, lambda: self.progress.configure(value=45 + ratio * 55))
 
+                    ensure_game_install_dir(self.base)
                     deferred = apply_update_zip(
                         zip_path,
                         self.base,
                         install_progress,
                         game_exe,
                     )
+                    bootstrap_games_catalog(self.root_base, self.launcher_dir)
                     if deferred:
                         apply_pending_updates(self.base)
 
